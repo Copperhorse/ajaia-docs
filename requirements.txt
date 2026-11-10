@@ -1,12 +1,38 @@
-fastapi
-uvicorn
-sqlalchemy>=2.0
-psycopg[binary]
-nh3
-mammoth
-markdown
-python-multipart
-itsdangerous
-pytest
-httpx
-python-dotenv
+# Exact versions this app was built and tested with (Python 3.14).
+# The first block is what the app and its tests use directly; the second block is what those need.
+# To update: install newer versions, run `pytest -q`, then re-freeze.
+
+fastapi==0.162.2
+uvicorn==0.54.0
+sqlalchemy==2.1.8
+psycopg[binary]==3.3.8
+nh3==0.3.7
+mammoth==1.13.0
+markdown==3.11.3
+python-multipart==0.0.33
+itsdangerous==2.2.0
+python-dotenv==1.2.4
+pytest==9.2.0
+httpx==0.28.1
+
+# --- needed by the packages above (pinned so installs repeat exactly) ---
+annotated-doc==0.0.5
+annotated-types==0.8.0
+anyio==4.16.0
+certifi==2026.10.23
+click==8.5.1
+cobble==0.1.4
+h11==0.16.0
+httpcore==1.0.9
+idna==3.20
+iniconfig==2.3.1
+opentelemetry-api==1.45.2
+packaging==26.3
+pluggy==1.7.0
+psycopg-binary==3.3.8
+pydantic-core==2.50.4
+pydantic==2.14.3
+pygments==2.21.0
+starlette==1.10.0
+typing-extensions==4.16.0
+typing-inspection==0.4.5
