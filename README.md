@@ -82,7 +82,7 @@ Open http://localhost:8000. Tables are created and the demo data is seeded on fi
 pytest -q
 ```
 
-72 tests, about 5 seconds. They run on in-memory SQLite, and `tests/conftest.py` forces that, so they can never touch the database in `DATABASE_URL`. They cover:
+76 tests, about 5 seconds. They run on in-memory SQLite, and `tests/conftest.py` forces that, so they can never touch the database in `DATABASE_URL`. They cover:
 
 - sign-in, sign-up and sessions
 - the permission matrix (owner / editor / viewer / stranger)
@@ -91,19 +91,28 @@ pytest -q
 
 The in-browser behavior (editor, autosave, banner, dialogs) was checked with a scripted Firefox run during development. That script is **not** part of this repository.
 
-## Deploy on Render with Supabase
+## Deploy (Docker on Hugging Face Spaces, with Supabase)
 
-1. **Supabase:** create a project and copy the **pooler** connection string (Project settings, Database). Use the pooler URL: the direct connection can be IPv6-only. The app creates its three tables on first start and turns on Row Level Security for them, so there is no SQL to run.
-2. **Render:** New, Web Service, connect this GitHub repository.
-   - Language: Python 3
-   - Build command: `pip install -r requirements.txt`
-   - Start command: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
-   - Python version: Render reads `.python-version` (3.14).
-   - Environment: `DATABASE_URL` (the Supabase pooler string), `SECRET_KEY`, `SEED_PASSWORD`, `COOKIE_SECURE=1`.
-   - `GET /healthz` returns `{"status": "ok"}` if you want to use it as a health check path.
-3. **Region matters.** Choose the Render region nearest your Supabase region. Every request makes several database round trips; when the two are far apart, pages take 1.5-2 seconds (see "Performance" in ARCHITECTURE.md).
+The database lives in Supabase and the app runs in a container, so any host that runs Docker works. This project uses a Hugging Face Space.
 
-A free Render service goes to sleep when idle and can take about a minute to wake. Data lives in Supabase, so nothing is lost.
+**1. Supabase.** Create a project and copy the **pooler** connection string (Project settings, Database). Use the pooler URL: the direct connection can be IPv6-only. The app creates its three tables on first start and turns on Row Level Security for them, so there is no SQL to run.
+
+**2. The Space.** Create a Space with SDK **Docker**. A Space's `README.md` must start with a small YAML header (`sdk: docker` and `app_port: 7860`). The `space` branch of this repository is `main` plus that header, so push that branch to the Space:
+
+```bash
+git remote add space https://huggingface.co/spaces/<user>/<space>
+git push space space:main
+```
+
+**3. Settings.** In the Space's settings add the secrets `DATABASE_URL` (the Supabase pooler string), `SECRET_KEY` and `SEED_PASSWORD`, and the variable `COOKIE_SECURE` = `1`. Never put these in the repository.
+
+**4. Open the direct address,** `https://<user>-<space>.hf.space`. The huggingface.co page shows the app inside an iframe, which the app's security headers block, and the sign-in cookie would not be sent from inside it.
+
+**5. Update later:** `git checkout space && git merge main && git push space space:main`.
+
+The `Dockerfile` installs the pinned libraries, copies only `app/` and `static/`, runs as user 1000 and listens on port 7860 (or `$PORT`). **Region matters:** choose a Supabase region close to where the Space runs. Every request makes several database round trips, and when the two are far apart, pages take 1.5-2 seconds (see "Performance" in ARCHITECTURE.md). A free Space goes to sleep when idle and takes a short while to wake on the next visit; the data lives in Supabase, so nothing is lost.
+
+**Render instead:** a Render web service built from this repository also works. Language Python 3, build command `pip install -r requirements.txt`, start command `uvicorn app.main:app --host 0.0.0.0 --port $PORT`, the same environment variables as above. Render reads the Python version from `.python-version`.
 
 ## Project layout
 
@@ -121,7 +130,6 @@ SPEC.md     The plan this was built from
 - **Open sign-up with no email verification, CAPTCHA or rate limiting.** Anyone with the link can create accounts. There is no password reset.
 - **Import keeps basic formatting only** (see the table above).
 - **Speed depends on where the database is.** See ARCHITECTURE.md.
-- **Dependencies are not pinned** in `requirements.txt`, so a fresh install gets the newest versions.
 - Tested in Firefox only.
 
 ## What I would build next
@@ -130,5 +138,5 @@ SPEC.md     The plan this was built from
 - A "what changed" view in the banner.
 - Tables, images and comments; PDF import and export; share links.
 - Email verification and password reset, with rate limiting on sign-up and sign-in.
-- Fewer database round trips per request, and pinned dependency versions.
+- Fewer database round trips per request.
 - A browser test suite (for example Playwright) kept in the repository.

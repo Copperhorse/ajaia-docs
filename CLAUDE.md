@@ -38,13 +38,13 @@ If `DATABASE_URL` is unset, fall back to a local SQLite file for development.
 
 ## Status
 
-The backend (`app/`), the frontend (`static/`, Quill 2.0.3 vendored), `tests/` (72 pytest tests), `README.md`, `ARCHITECTURE.md` and a draft `SUBMISSION.md` are written. See ARCHITECTURE.md for how the pieces fit.
+The backend (`app/`), the frontend (`static/`, Quill 2.0.3 vendored), `tests/` (76 pytest tests), `README.md`, `ARCHITECTURE.md` and a draft `SUBMISSION.md` are written. See ARCHITECTURE.md for how the pieces fit.
 
-Not done yet: deployment on Render and its smoke test, `AI_WORKFLOW.md` (the user writes it in their own words), the demo video.
+Not done yet: the live deployment smoke test and the demo video. `AI_WORKFLOW.md` is the user's own note and is written.
 
-Deployment: Render builds from the GitHub repo (no Docker, no Dockerfile). Build `pip install -r requirements.txt`, start `uvicorn app.main:app --host 0.0.0.0 --port $PORT`.
+Deployment: a Docker image (`Dockerfile`) on a Hugging Face Space, pushed from the `space` branch (`main` plus the Space's README header). Secrets are set in the Space settings, never committed. Render's Python runtime is the fallback (build `pip install -r requirements.txt`, start `uvicorn app.main:app --host 0.0.0.0 --port $PORT`).
 
-Leftover from the `uv init` scaffold: `pyproject.toml` and `src/text_editor/` are unused by the app.
+The `uv init` scaffold (`pyproject.toml`, `src/`) was removed as unused. `pytest.ini` holds the pytest settings, and `requirements.txt` pins exact versions.
 
 ## Definition of done for a milestone
 

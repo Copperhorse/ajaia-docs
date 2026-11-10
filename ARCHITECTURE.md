@@ -132,7 +132,7 @@ Errors always come back as `{"detail": "message"}` and the UI always shows them.
 
 ## Testing
 
-- **72 pytest tests** on in-memory SQLite (`pytest -q`). `tests/conftest.py` forces the in-memory database and resets it before every test, so tests are isolated and can never reach a real database.
+- **76 pytest tests** on in-memory SQLite (`pytest -q`). `tests/conftest.py` forces the in-memory database and resets it before every test, so tests are isolated and can never reach a real database.
 - **Browser behavior** was checked with a scripted Firefox run: sign-in and sign-up, creating, renaming and saving, autosave debouncing, `Ctrl+S`, the change banner with a simulated second user, sharing, import, delete and the viewer mode. That harness lives outside the repository.
 - The API was also exercised against the real Supabase database (create, save, conflict, share, delete), using temporary documents that were removed afterwards.
 
@@ -158,5 +158,4 @@ What helps most is **running the app in a region close to the database**. Fewer 
 - No "what changed" view in the change banner.
 - Open sign-up without email verification, CAPTCHA or rate limiting; no password reset.
 - Import keeps basic formatting only; `.docx` underline is dropped by mammoth's default.
-- `requirements.txt` is not pinned.
 - Tested in Firefox only.

@@ -48,7 +48,7 @@ Mapping to the assignment:
 - **Import:** `mammoth` (.docx to HTML), `markdown` (.md to HTML), plain `.txt` is escaped into paragraphs.
 - **Frontend:** plain HTML + JS + CSS served by FastAPI. No framework.
 - **Tests:** pytest with FastAPI `TestClient`. Optional Playwright smoke test.
-- **Deploy:** a Render web service built straight from the GitHub repository (native Python runtime, no Docker, no Dockerfile). Free tiers wipe local files, which is why data lives in Supabase.
+- **Deploy:** a Docker image (the `Dockerfile` in the repo) running as a Hugging Face Space. Render's native Python runtime also works. Free tiers wipe local files, which is why data lives in Supabase.
 
 PyMuPDF was considered and rejected: Office-to-Markdown needs the paid PyMuPDF Pro add-on (3-page limit without a license), and the direction is wrong for this task.
 
@@ -188,7 +188,7 @@ Seeded demo users (password from `SEED_PASSWORD`, document it in the README):
 - `alice@example.com`, `bob@example.com`, `carol@example.com`
 - Welcome document owned by Alice, shared with Bob (editor) and Carol (viewer). A second document owned by Bob, shared with Alice (editor).
 
-Render settings: build command `pip install -r requirements.txt`; start command `uvicorn app.main:app --host 0.0.0.0 --port $PORT`. Render reads the Python version from `.python-version`. Pick the Render region nearest the Supabase region (see ARCHITECTURE.md, "Performance").
+Hugging Face Space settings: SDK Docker; the Space's `README.md` starts with a small YAML header (`sdk: docker`, `app_port: 7860`), kept on a separate `space` branch. The `Dockerfile` listens on `$PORT` (default 7860) as user 1000. Secrets `DATABASE_URL`, `SECRET_KEY` and `SEED_PASSWORD`, and variable `COOKIE_SECURE=1`, are set in the Space settings and never committed. Give reviewers the direct `*.hf.space` address: the huggingface.co page embeds the app in an iframe, which the app's `frame-ancestors 'none'` header blocks. Render also works (build `pip install -r requirements.txt`, start `uvicorn app.main:app --host 0.0.0.0 --port $PORT`). Pick the host region nearest the Supabase region (see ARCHITECTURE.md, "Performance").
 
 ## 13. Deliverables checklist
 
@@ -214,7 +214,7 @@ Walkthrough order: log in as Alice, create and format a document, import a file,
 | 13:15 | Tests for permissions and save semantics |
 | 13:45 | Frontend: login, list with tabs, editor, autosave, share dialog |
 | 14:30 | Import, change banner |
-| 14:50 | Deploy on Render from the GitHub repo, smoke test on the live URL |
+| 14:50 | Deploy on Hugging Face Spaces (Docker), smoke test on the live URL |
 | 15:05 | README, ARCHITECTURE, SUBMISSION, AI_WORKFLOW, Drive folder |
 | 15:15 | Record and upload video, submit |
 
@@ -223,7 +223,7 @@ If behind schedule, cut in this order: diff highlighting, "Download my copy", Pl
 ## 15. Decisions (all settled)
 
 - Sharing is by **email**.
-- Host: **Render**, built from the GitHub repository.
+- Host: **Hugging Face Spaces** (Docker image built from the repo's `Dockerfile`). Render was the first choice and still works.
 - Database: **Supabase Postgres** (SQLite only for tests and local development).
 - Account creation: **open sign-up** (added after the first version of this spec).
 

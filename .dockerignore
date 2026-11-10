@@ -1,0 +1,15 @@
+# Keep secrets and clutter out of the image. (The Dockerfile only copies app/ and static/ anyway.)
+.env
+.git
+.gitignore
+.venv
+__pycache__/
+*.pyc
+.pytest_cache/
+dev.db
+tests/
+pytest.ini
+*.md
+*.png
+Dockerfile
+.dockerignore
