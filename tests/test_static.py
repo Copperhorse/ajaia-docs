@@ -15,7 +15,7 @@ def test_home_page_and_assets_are_served():
 def test_pages_carry_security_headers():
     r = TestClient(app).get("/")
     assert r.headers["x-content-type-options"] == "nosniff"
-    assert "script-src" in r.headers["content-security-policy"] or "default-src 'self'" in r.headers["content-security-policy"]
+    assert "default-src 'self'" in r.headers["content-security-policy"]
 
 
 def test_frontend_never_writes_server_data_as_html():

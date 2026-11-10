@@ -25,14 +25,16 @@ function el(tag, props = {}, ...children) {
 
 // Call the API. Errors become Error(message) using the server's {"detail": "..."} text.
 async function api(path, { method = "GET", body } = {}) {
+  const request = { method };
+  if (body instanceof FormData) {
+    request.body = body; // file upload: the browser sets the multipart header itself
+  } else if (body) {
+    request.body = JSON.stringify(body);
+    request.headers = { "Content-Type": "application/json" };
+  }
   let response;
   try {
-    const isUpload = body instanceof FormData; // the browser sets the multipart header itself
-    response = await fetch("/api" + path, {
-      method,
-      headers: body && !isUpload ? { "Content-Type": "application/json" } : {},
-      body: body ? (isUpload ? body : JSON.stringify(body)) : undefined,
-    });
+    response = await fetch("/api" + path, request);
   } catch {
     throw new Error("Could not reach the server");
   }
@@ -146,19 +148,26 @@ function roleBadge(role) {
   return el("span", { class: "badge badge-" + role }, role);
 }
 
+// The viewer/editor dropdown used by the share dialog (extra props: id, aria-label, onchange).
+function accessSelect(props) {
+  return el("select", props,
+    el("option", { value: "viewer" }, "Can view"), el("option", { value: "editor" }, "Can edit"));
+}
+
 // ---------- document list ----------
 
 async function showList() {
   const message = makeMessage();
   const area = el("div", {});
-  const newButton = el("button", { class: "btn btn-primary", type: "button" }, "New document");
-  newButton.addEventListener("click", () => createDocument(message, newButton));
+  const create = () => createDocument(message, newButton);
+  const newButton = el("button", { class: "btn btn-primary", type: "button", onclick: create }, "New document");
 
   // Import: the visible button opens the hidden file picker. The server checks type and size.
-  const fileInput = el("input", { type: "file", accept: ".txt,.md,.docx", hidden: "", "aria-label": "Choose a file to import" });
-  const importButton = el("button", { class: "btn", type: "button" }, "Import file");
-  importButton.addEventListener("click", () => fileInput.click());
-  fileInput.addEventListener("change", () => importFile(fileInput, message, importButton));
+  const fileInput = el("input", {
+    type: "file", accept: ".txt,.md,.docx", hidden: "", "aria-label": "Choose a file to import",
+    onchange: () => importFile(fileInput, message, importButton),
+  });
+  const importButton = el("button", { class: "btn", type: "button", onclick: () => fileInput.click() }, "Import file");
 
   const tabs = el("div", { class: "tabs glass", role: "tablist" });
   mount(topBar(), el("div", { class: "page" },
@@ -182,13 +191,12 @@ async function showList() {
   function draw() {
     const names = { owned: "Owned by me", shared: "Shared with me" };
     tabs.replaceChildren(...["owned", "shared"].map((key) => {
-      const tab = el("button", {
+      return el("button", {
         class: "tab", type: "button", role: "tab", "aria-selected": String(key === currentTab),
+        onclick: () => { currentTab = key; draw(); },
       }, `${names[key]} (${docs[key].length})`);
-      tab.addEventListener("click", () => { currentTab = key; draw(); });
-      return tab;
     }));
-    area.replaceChildren(docs[currentTab].length ? cardGrid(docs[currentTab]) : emptyState(newButton));
+    area.replaceChildren(docs[currentTab].length ? cardGrid(docs[currentTab]) : emptyState(create));
   }
   draw();
 }
@@ -207,14 +215,13 @@ function cardGrid(list) {
   }));
 }
 
-function emptyState() {
+function emptyState(create) {
   if (currentTab === "shared") {
     return el("div", { class: "empty glass" }, el("p", {}, "Nothing has been shared with you yet"),
       el("span", { class: "muted" }, "Documents other people share with you will appear here."));
   }
-  const button = el("button", { class: "btn btn-primary", type: "button" }, "Create your first document");
-  button.addEventListener("click", () => document.querySelector(".page-head .btn-primary").click());
-  return el("div", { class: "empty glass" }, el("p", {}, "You have no documents yet"), button);
+  return el("div", { class: "empty glass" }, el("p", {}, "You have no documents yet"),
+    el("button", { class: "btn btn-primary", type: "button", onclick: create }, "Create your first document"));
 }
 
 async function createDocument(message, button) {
@@ -295,42 +302,50 @@ function openEditor(doc, holder, message) {
   const canEdit = doc.can_edit;
   const titleInput = el("input", { class: "title-input", value: doc.title, maxlength: "200", "aria-label": "Document title" });
   const status = el("span", { class: "status", role: "status" }, el("i"), el("span"));
-  const toolbar = buildToolbar();
+  const toolbar = canEdit && buildToolbar(); // false for viewers: Quill then shows no toolbar
   const editorBox = el("div", {});
   const who = doc.updated_by ? `Last edited by ${doc.updated_by}, ${formatTime(doc.updated_at)}` : "";
 
-  // Only the owner can share. The server enforces this too; hiding the button is just tidiness.
-  const shareButton = doc.role === "owner"
-    ? el("button", { class: "btn", type: "button", onclick: () => openShareDialog(doc.id, titleInput.value.trim() || doc.title) }, "Share")
-    : null;
-
+  // The page is the same for everyone. Only the title row and the toolbar differ between editors and viewers.
+  const titleRow = el("div", { class: "title-row" }, titleInput);
+  const card = el("div", { class: "editor-card glass" });
   if (canEdit) {
-    holder.replaceChildren(
-      el("div", { class: "title-row" }, titleInput, status, ...(shareButton ? [shareButton] : [])),
-      el("div", { class: "meta" }, roleBadge(doc.role), el("span", {}, `Owner: ${doc.owner}`), el("span", {}, who)),
-      el("div", { class: "editor-card glass" }, toolbar, editorBox),
-    );
+    titleRow.append(status);
+    // Only the owner can share. The server enforces this too; hiding the button is just tidiness.
+    if (doc.role === "owner") {
+      titleRow.append(el("button", {
+        class: "btn", type: "button", onclick: () => openShareDialog(doc.id, titleInput.value.trim() || doc.title),
+      }, "Share"));
+    }
+    card.append(toolbar);
   } else {
     titleInput.setAttribute("readonly", "");
-    holder.replaceChildren(
-      el("div", { class: "title-row" }, titleInput, el("span", { class: "badge badge-viewer" }, "View only")),
-      el("div", { class: "meta" }, roleBadge(doc.role), el("span", {}, `Owner: ${doc.owner}`), el("span", {}, who)),
-      el("div", { class: "editor-card glass" }, editorBox),
-    );
+    titleRow.append(el("span", { class: "badge badge-viewer" }, "View only"));
   }
+  card.append(editorBox);
+  holder.replaceChildren(
+    titleRow,
+    el("div", { class: "meta" }, roleBadge(doc.role), el("span", {}, `Owner: ${doc.owner}`), el("span", {}, who)),
+    card,
+  );
 
   const quill = new Quill(editorBox, {
     theme: "snow",
     readOnly: !canEdit,
     placeholder: "Start writing…",
     formats: FORMATS,
-    modules: { toolbar: canEdit ? toolbar : false },
+    modules: { toolbar },
   });
   // Load the saved HTML. "silent" means this does not count as an edit.
   quill.setContents(quill.clipboard.convert({ html: doc.content }), "silent");
   if (!canEdit) return;
+  leaveEditor = startAutosave({ doc, quill, titleInput, status, message });
+  quill.focus();
+}
 
-  // ----- saving -----
+// Saving for an editable document: autosave, Ctrl+S, and change detection (SPEC section 7).
+// Returns the function that route() calls when the user leaves the page.
+function startAutosave({ doc, quill, titleInput, status, message }) {
   let baseHash = doc.content_hash;  // hash of the version we loaded or last saved (SPEC section 7)
   let contentDirty = false;         // content changed since the last save
   let titleDirty = false;
@@ -338,6 +353,8 @@ function openEditor(doc, holder, message) {
   let stopped = false;              // true after a conflict: autosave pauses (the change banner comes next milestone)
   let active = true;                // false once the user leaves this page
   let timer = null;
+
+  function hasUnsavedChanges() { return contentDirty || titleDirty; }
 
   function setStatus(state, text) {
     status.dataset.state = state;
@@ -350,9 +367,15 @@ function openEditor(doc, holder, message) {
     timer = setTimeout(save, AUTOSAVE_DELAY_MS);
   }
 
+  // Called after any edit: show "Unsaved changes" and save once the user pauses.
+  function edited() {
+    setStatus("pending", "Unsaved changes");
+    scheduleSave();
+  }
+
   async function save() {
     clearTimeout(timer);
-    if (stopped || saving || (!contentDirty && !titleDirty)) return;
+    if (stopped || saving || !hasUnsavedChanges()) return;
 
     const body = {};
     const title = titleInput.value.trim();
@@ -369,8 +392,10 @@ function openEditor(doc, holder, message) {
       const saved = await api("/documents/" + doc.id, { method: "PATCH", body });
       // Only a content save may move baseHash. A title-only save must not hide someone else's newer content.
       if (sendContent) baseHash = saved.content_hash;
-      if (active) setStatus(contentDirty || titleDirty ? "pending" : "saved",
-        contentDirty || titleDirty ? "Unsaved changes" : "Saved " + new Date().toLocaleTimeString([], { timeStyle: "short" }));
+      if (active) {
+        if (hasUnsavedChanges()) setStatus("pending", "Unsaved changes");
+        else setStatus("saved", "Saved " + new Date().toLocaleTimeString([], { timeStyle: "short" }));
+      }
     } catch (error) {
       if (sendTitle) titleDirty = true;   // nothing was saved: keep the flags so Ctrl+S can retry
       if (sendContent) contentDirty = true;
@@ -382,20 +407,18 @@ function openEditor(doc, holder, message) {
       else leftoverError = `Changes to "${titleInput.value}" were not saved. ${error.message}`;
     } finally {
       saving = false;
-      if (active && (contentDirty || titleDirty) && !stopped && status.dataset.state !== "error") scheduleSave();
+      if (active && hasUnsavedChanges() && !stopped && status.dataset.state !== "error") scheduleSave();
     }
   }
 
   quill.on("text-change", (_delta, _old, source) => {
     if (source !== "user") return;
     contentDirty = true;
-    setStatus("pending", "Unsaved changes");
-    scheduleSave();
+    edited();
   });
   titleInput.addEventListener("input", () => {
     titleDirty = true;
-    setStatus("pending", "Unsaved changes");
-    scheduleSave();
+    edited();
   });
 
   function onKeydown(event) {
@@ -405,19 +428,18 @@ function openEditor(doc, holder, message) {
     }
   }
   function warnBeforeClosing(event) {
-    if (contentDirty || titleDirty || saving) { event.preventDefault(); event.returnValue = ""; }
+    if (hasUnsavedChanges() || saving) { event.preventDefault(); event.returnValue = ""; }
   }
   document.addEventListener("keydown", onKeydown);
   window.addEventListener("beforeunload", warnBeforeClosing);
 
   // route() calls this when the user leaves the page: stop listening and save whatever is pending.
-  leaveEditor = () => {
+  return function leave() {
     active = false;
     document.removeEventListener("keydown", onKeydown);
     window.removeEventListener("beforeunload", warnBeforeClosing);
     save();
   };
-  quill.focus();
 }
 
 // ---------- share dialog (owner only) ----------
@@ -425,10 +447,9 @@ function openEditor(doc, holder, message) {
 function openShareDialog(docId, title) {
   const message = makeMessage();
   const email = el("input", { id: "share-email", type: "email", required: "", autocomplete: "off", placeholder: "bob@example.com" });
-  const role = el("select", { id: "share-role" },
-    el("option", { value: "viewer" }, "Can view"), el("option", { value: "editor" }, "Can edit"));
+  const role = accessSelect({ id: "share-role" });
   const addButton = el("button", { class: "btn btn-primary", type: "submit" }, "Share");
-  const done = el("button", { class: "btn", type: "button" }, "Done");
+  const done = el("button", { class: "btn", type: "button", onclick: () => dialog.close() }, "Done");
   const people = el("ul", { class: "people" });
   const form = el("form", { class: "share-form" },
     el("div", { class: "field grow" }, el("label", { for: "share-email" }, "Email"), email),
@@ -451,14 +472,15 @@ function openShareDialog(docId, title) {
   function draw(list) {
     if (!list.length) { people.replaceChildren(el("li", { class: "muted" }, "Not shared with anyone yet.")); return; }
     people.replaceChildren(...list.map((person) => {
-      const access = el("select", { "aria-label": `Access for ${person.email}` },
-        el("option", { value: "viewer" }, "Can view"), el("option", { value: "editor" }, "Can edit"));
+      const access = accessSelect({
+        "aria-label": `Access for ${person.email}`,
+        onchange: () => change(() => api(sharesUrl, { method: "PUT", body: { email: person.email, role: access.value } })),
+      });
       access.value = person.role;
-      access.addEventListener("change", () =>
-        change(() => api(sharesUrl, { method: "PUT", body: { email: person.email, role: access.value } })));
-      const remove = el("button", { class: "btn", type: "button", "aria-label": `Remove access for ${person.email}` }, "Remove");
-      remove.addEventListener("click", () =>
-        change(() => api(`${sharesUrl}/${encodeURIComponent(person.email)}`, { method: "DELETE" })));
+      const remove = el("button", {
+        class: "btn", type: "button", "aria-label": `Remove access for ${person.email}`,
+        onclick: () => change(() => api(`${sharesUrl}/${encodeURIComponent(person.email)}`, { method: "DELETE" })),
+      }, "Remove");
       return el("li", { class: "person" },
         el("span", { class: "person-info" }, el("b", {}, person.username), el("span", { class: "muted" }, person.email)),
         access, remove);
@@ -485,8 +507,7 @@ function openShareDialog(docId, title) {
     addButton.disabled = false;
     if (ok) { email.value = ""; email.focus(); }
   });
-  done.addEventListener("click", () => dialog.close());
-  dialog.addEventListener("close", () => dialog.remove()); // Escape also closes it
+  dialog.addEventListener("close", () => dialog.remove()); // Done and Escape both close it
 
   document.body.append(dialog);
   dialog.showModal();
