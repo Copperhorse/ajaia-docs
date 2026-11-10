@@ -1,5 +1,6 @@
 import logging
 import os
+import re
 import secrets
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -9,7 +10,8 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import insert, select
+from sqlalchemy.exc import IntegrityError
 from starlette.middleware.sessions import SessionMiddleware
 
 from app import db
@@ -89,6 +91,46 @@ def login(body: LoginBody, request: Request):
     request.session.clear()
     request.session["user_id"] = user["id"]
     return {"id": user["id"], "email": user["email"], "username": user["username"]}
+
+
+EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+USERNAME_PATTERN = re.compile(r"^[a-z0-9._-]{2,30}$")
+
+
+class RegisterBody(BaseModel):
+    email: str
+    username: str
+    password: str
+
+
+@app.post("/api/register", status_code=201)
+def register(body: RegisterBody, request: Request):
+    """Open sign-up: anyone can create an account. No email verification (see SPEC section 16)."""
+    email = body.email.strip().lower()
+    username = body.username.strip().lower()
+    if len(email) > 254 or not EMAIL_PATTERN.match(email):
+        raise HTTPException(status_code=400, detail="Please enter a valid email address")
+    if not USERNAME_PATTERN.match(username):
+        raise HTTPException(status_code=400, detail="Username must be 2 to 30 characters: letters, numbers, dots, dashes or underscores")
+    if not 8 <= len(body.password) <= 128:
+        raise HTTPException(status_code=400, detail="Password must be 8 to 128 characters")
+
+    password_hash = hash_password(body.password)
+    try:
+        with db.engine.begin() as conn:
+            if conn.execute(select(db.users.c.id).where(db.users.c.email == email)).first():
+                raise HTTPException(status_code=409, detail="An account with that email already exists")
+            if conn.execute(select(db.users.c.id).where(db.users.c.username == username)).first():
+                raise HTTPException(status_code=409, detail="That username is taken")
+            user_id = conn.execute(insert(db.users).values(
+                email=email, username=username, password_hash=password_hash,
+            )).inserted_primary_key[0]
+    except IntegrityError:  # two sign-ups with the same email or username at the same instant
+        raise HTTPException(status_code=409, detail="That email or username is already taken")
+
+    request.session.clear()
+    request.session["user_id"] = user_id  # signed in straight away
+    return {"id": user_id, "email": email, "username": username}
 
 
 @app.post("/api/logout")

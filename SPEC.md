@@ -23,6 +23,7 @@ Mapping to the assignment:
 
 **In:**
 - Email + password login with seeded demo users.
+- Open sign-up (email, username, password): anyone can create an account and is signed in at once. No email verification, no password reset.
 - Document list with two tabs: "Owned by me" and "Shared with me" (role badge, owner name).
 - Rich-text editor: bold, italic, underline, headings (H1-H3), bullet and numbered lists.
 - Rename document, autosave, manual save.
@@ -104,6 +105,7 @@ All JSON under `/api`. Errors always return `{"detail": "human readable message"
 
 | Method + path | Purpose |
 |---|---|
+| `POST /api/register` `{email, username, password}` | Create an account and start a session (201). 400 for invalid input, 409 if the email or username is taken. |
 | `POST /api/login` `{email, password}` | Start session. 401 on bad credentials. |
 | `POST /api/logout`, `GET /api/me` | End session, current user. |
 | `GET /api/documents` | `{owned: [...], shared: [...]}` with title, preview, updated_at, role, owner name, share count. |
@@ -162,6 +164,7 @@ Also set `Content-Security-Policy`, `X-Content-Type-Options: nosniff`, and sessi
 - Title: trimmed, 1-200 characters.
 - Content: sanitized, at most 500,000 characters.
 - Share role: `viewer` or `editor` only.
+- Sign-up: email trimmed and lowercased, a simple `x@y.z` shape check, at most 254 characters. Username trimmed and lowercased, 2-30 characters from `a-z 0-9 . _ -`. Password 8-128 characters (not trimmed).
 - Login failures say "Wrong email or password" and nothing more.
 - The UI shows every API error message in a visible message area. No silent failures. Network errors show "Could not reach the server".
 - Viewers see a read-only editor (toolbar hidden or disabled) and a "View only" badge.
@@ -222,4 +225,4 @@ If behind schedule, cut in this order: diff highlighting, "Download my copy", Pl
 
 ## 16. Known limitations (copy into README)
 
-Last-save protection and change notification, not real-time editing or merging. No version history. Free-tier hosting can sleep and take about a minute to wake. Imports keep basic formatting only.
+Open sign-up has no email verification, CAPTCHA or rate limiting, so anyone with the link can create accounts. Last-save protection and change notification, not real-time editing or merging. No version history. Free-tier hosting can sleep and take about a minute to wake. Imports keep basic formatting only.

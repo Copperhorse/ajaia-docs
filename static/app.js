@@ -98,18 +98,32 @@ function handleError(error, message) {
   }
 }
 
-// ---------- sign in ----------
+// ---------- sign in and sign up ----------
 
 function showLogin(notice) {
+  showAuth("login", notice);
+}
+
+// One card for both: "login" asks for email and password, "signup" also asks for a username.
+function showAuth(mode, notice) {
+  const signingUp = mode === "signup";
   const message = makeMessage();
   if (notice) message.show(notice);
+  const field = (id, label, input, hint) =>
+    el("div", { class: "field" }, el("label", { for: id }, label), input, ...(hint ? [el("span", { class: "field-hint" }, hint)] : []));
+
   const email = el("input", { id: "email", type: "email", autocomplete: "username", required: "", placeholder: "alice@example.com" });
-  const password = el("input", { id: "password", type: "password", autocomplete: "current-password", required: "" });
-  const submit = el("button", { class: "btn btn-primary", type: "submit" }, "Sign in");
+  const username = el("input", { id: "username", type: "text", autocomplete: "nickname", required: "", minlength: "2", maxlength: "30", placeholder: "alice" });
+  const password = el("input", {
+    id: "password", type: "password", required: "",
+    autocomplete: signingUp ? "new-password" : "current-password", ...(signingUp ? { minlength: "8", maxlength: "128" } : {}),
+  });
+  const submit = el("button", { class: "btn btn-primary", type: "submit" }, signingUp ? "Create account" : "Sign in");
 
   const form = el("form", {},
-    el("div", { class: "field" }, el("label", { for: "email" }, "Email"), email),
-    el("div", { class: "field" }, el("label", { for: "password" }, "Password"), password),
+    field("email", "Email", email),
+    ...(signingUp ? [field("username", "Username", username, "2–30 letters, numbers, dots, dashes or underscores")] : []),
+    field("password", "Password", password, signingUp ? "At least 8 characters" : null),
     message.node,
     submit,
   );
@@ -118,8 +132,10 @@ function showLogin(notice) {
     message.hide();
     submit.disabled = true;
     try {
-      me = await api("/login", { method: "POST", body: { email: email.value, password: password.value } });
-      route();
+      const body = { email: email.value, password: password.value };
+      if (signingUp) body.username = username.value;
+      me = await api(signingUp ? "/register" : "/login", { method: "POST", body });
+      route(); // signing up also signs you in
     } catch (error) {
       message.show(error.message);
       submit.disabled = false;
@@ -129,8 +145,11 @@ function showLogin(notice) {
   mount(el("div", { class: "login" },
     el("div", { class: "login-card glass" },
       el("span", { class: "label" }, "Ajaia Docs"),
-      el("h1", {}, "Sign in"),
+      el("h1", {}, signingUp ? "Create account" : "Sign in"),
       form,
+      el("button", {
+        class: "link-button", type: "button", onclick: () => showAuth(signingUp ? "login" : "signup"),
+      }, signingUp ? "I already have an account" : "Create an account"),
     )));
 }
 
