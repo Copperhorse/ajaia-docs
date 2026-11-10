@@ -7,13 +7,13 @@
 - **Claude Code (Claude Sonnet 5.5):** wrote the backend, the frontend, the tests and the documents in the repo, following `SPEC.md` and `CLAUDE.md`. It also ran the checks described below, created the GitHub repository and pushed the commits when I asked it to.
 - **Zed editor:** where I read the code, ran the tests and ran my own commands.
 - **Excalidraw:** the diagrams I show in the video. Claude generated the first versions; I added the Scope and Tech Stack boxes and arranged the canvas myself.
-- **Supabase** (hosted Postgres), **GitHub**, and **Render** for hosting. 
+- **Supabase** (hosted Postgres), **GitHub**, and **Vercel** for hosting. I first planned Render, then a Docker Space on Hugging Face, and ended on Vercel (see the decision log).
 
 ## How I used AI
 
 1. **Planning.** I wrote down the scope and the first idea of the stack myself (FastAPI, Supabase, the tables). I used Claude for references and for checking my ideas. For example, I didn't know which rich-text editors exist, so I asked, and Claude compared Quill, Tiptap and others.
 2. **Spec before code.** Before any code, I had Claude write `SPEC.md` (scope, data model, API, save logic) and `CLAUDE.md` (rules for the coding agent). Giving the coding agent a fixed spec meant it had less room to guess or go off track. `CLAUDE.md` told it to build one milestone at a time, say what it would build before each one, say how to check it afterwards, and say which of its choices were not obvious.
-3. **Code.** Claude Code wrote the code in small steps, one milestone at a time: database layer, password hashing and sanitizer, sign-in and demo users, documents and saving, sharing, import, then the frontend (list, editor, share dialog, import, change banner), open sign-up and delete. I did not write the application code by hand. By hand I edited `CLAUDE.md` and this note, and I set up `.env` and the Supabase project. `TODO(me): add anything else you changed yourself, however small.`
+3. **Code.** Claude Code wrote the code in small steps, one milestone at a time: database layer, password hashing and sanitizer, sign-in and demo users, documents and saving, sharing, import, then the frontend (list, editor, share dialog, import, change banner), open sign-up and delete. I did not write the application code by hand. By hand I edited `CLAUDE.md` and this note, and I set up `.env` and the Supabase project.
 4. **Tests and documents.** Claude Code wrote the 76 automated tests, and drafted `README.md`, `ARCHITECTURE.md` and `SUBMISSION.md`. When I asked, it also measured how long each request takes against the real database.
 5. **Review.** I read the code in Zed, ran the tests, and used the app myself.
 
@@ -30,7 +30,7 @@
 | Open sign-up (anyone can create an account) | Me | The spec had only demo users. Claude Code asked me to choose between a protected admin route, open sign-up, or a SQL script, and noted that a plain SQL insert can't make a working login because passwords are stored as scrypt hashes. I chose open sign-up. It warned there is no email check or rate limit, and that is recorded in `SPEC.md`. |
 | Display names with spaces and capitals | Me | After the sign-up form rejected "Bob Odenkirk", I asked for spaces and capitals. Claude Code made names unique ignoring case with a database index. |
 | Squarer corners everywhere, tidier share dialog | Me | Claude Code picked the sizes (8, 6 and 4 px) in one place in the stylesheet. This departs from the design system, which uses pills. |
-| No Docker, Render builds from the GitHub repo | Me | Claude Code removed Docker from the spec and wrote the Render build and start commands into the README. |
+| Where to host | Me | I first told Claude Code to drop Docker and let Render build from GitHub. Later I asked for a Dockerfile and a Hugging Face Space. Claude Code wrote the Dockerfile and, since the Docker service was not running here, ran the same files and start command in a clean environment to check them. Hugging Face then refused to create the Space (a Docker Space needs a paid plan), and Render asks for a card, which I don't have. Claude Code searched for free options without a card, listed what it found with the uncertainty, and I picked Vercel. It found in Vercel's documentation that the app needs no code changes. The Dockerfile stays in the repo for other Docker hosts. |
 | Move the database near the host | Me | Claude Code measured the delay and explained it. I made the change (see below). |
 
 ## Where AI's first answer was changed or thrown away
@@ -66,4 +66,4 @@
 - Two real people editing at once. The banner was tested with a simulated second user.
 - Abuse of open sign-up: there is no email check, no CAPTCHA and no rate limit.
 - Large documents, and many people editing at the same time.
-- `requirements.txt` is not pinned, so a fresh install gets the newest versions.
+- Newer versions of the libraries. `requirements.txt` pins the exact versions that were tested, and a clean install of those passed all 76 tests.
