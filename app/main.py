@@ -10,12 +10,12 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-from sqlalchemy import func, insert, select
+from sqlalchemy import func, insert, or_, select
 from sqlalchemy.exc import IntegrityError
 from starlette.middleware.sessions import SessionMiddleware
 
 from app import db
-from app.auth import current_user
+from app.auth import current_user, normalize_email
 from app.documents import router as documents_router
 from app.importers import router as import_router
 from app.security import hash_password, verify_password
@@ -82,7 +82,7 @@ class LoginBody(BaseModel):
 
 @app.post("/api/login")
 def login(body: LoginBody, request: Request):
-    email = body.email.strip().lower()
+    email = normalize_email(body.email)
     with db.engine.connect() as conn:
         user = conn.execute(select(db.users).where(db.users.c.email == email)).mappings().first()
     ok = verify_password(body.password, user["password_hash"] if user else DUMMY_HASH)
@@ -104,25 +104,44 @@ class RegisterBody(BaseModel):
     password: str
 
 
+# One small "clean" function per field, like clean_title in documents.py: tidy the value or raise a 400.
+
+def clean_email(raw: str) -> str:
+    email = normalize_email(raw)
+    if len(email) > 254 or not EMAIL_PATTERN.match(email):
+        raise HTTPException(status_code=400, detail="Please enter a valid email address")
+    return email
+
+
+def clean_name(raw: str) -> str:
+    name = " ".join(raw.split())  # trim and collapse runs of spaces; capitals are kept
+    if not NAME_PATTERN.match(name):
+        raise HTTPException(status_code=400, detail="Name must be 2 to 30 characters: letters, numbers, spaces, dots, dashes, apostrophes or underscores")
+    return name
+
+
+def check_password(password: str) -> None:
+    if not 8 <= len(password) <= 128:
+        raise HTTPException(status_code=400, detail="Password must be 8 to 128 characters")
+
+
 @app.post("/api/register", status_code=201)
 def register(body: RegisterBody, request: Request):
     """Open sign-up: anyone can create an account. No email verification (see SPEC section 16)."""
-    email = body.email.strip().lower()
-    username = " ".join(body.username.split())  # trim and collapse runs of spaces; capitals are kept
-    if len(email) > 254 or not EMAIL_PATTERN.match(email):
-        raise HTTPException(status_code=400, detail="Please enter a valid email address")
-    if not NAME_PATTERN.match(username):
-        raise HTTPException(status_code=400, detail="Name must be 2 to 30 characters: letters, numbers, spaces, dots, dashes, apostrophes or underscores")
-    if not 8 <= len(body.password) <= 128:
-        raise HTTPException(status_code=400, detail="Password must be 8 to 128 characters")
+    email, username = clean_email(body.email), clean_name(body.username)
+    check_password(body.password)
 
-    password_hash = hash_password(body.password)
+    password_hash = hash_password(body.password)  # slow on purpose, so do it before opening a transaction
     try:
         with db.engine.begin() as conn:
-            if conn.execute(select(db.users.c.id).where(db.users.c.email == email)).first():
+            # One query finds any clash. Names are compared ignoring case, the same way the unique index does it.
+            clashes = conn.execute(select(db.users.c.email).where(or_(
+                db.users.c.email == email,
+                func.lower(db.users.c.username) == func.lower(username),
+            ))).scalars().all()
+            if email in clashes:
                 raise HTTPException(status_code=409, detail="An account with that email already exists")
-            # compared ignoring case, the same way the unique index does it
-            if conn.execute(select(db.users.c.id).where(func.lower(db.users.c.username) == func.lower(username))).first():
+            if clashes:
                 raise HTTPException(status_code=409, detail="That name is taken")
             user_id = conn.execute(insert(db.users).values(
                 email=email, username=username, password_hash=password_hash,

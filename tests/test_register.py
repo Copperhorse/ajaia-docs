@@ -1,10 +1,18 @@
+import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import select
+from sqlalchemy import insert, select, text
+from sqlalchemy.exc import IntegrityError
 
 from app import db
 from app.main import app
 
 WELCOME = 1  # seeded document, see conftest.py
+
+
+def insert_user(email, username):
+    """Put a user straight into the database, past the sign-up route."""
+    with db.engine.begin() as conn:
+        conn.execute(insert(db.users).values(email=email, username=username, password_hash="h"))
 
 
 def sign_up(client, email="newbie@example.com", username="newbie", password="a-good-password"):
@@ -64,28 +72,21 @@ def test_duplicate_email_and_name_are_refused(login_as):
 
 
 def test_the_database_itself_refuses_names_that_differ_only_by_case():
-    from sqlalchemy import insert
-    from sqlalchemy.exc import IntegrityError
-    import pytest
     with pytest.raises(IntegrityError):
-        with db.engine.begin() as conn:                                          # "bob" is seeded
-            conn.execute(insert(db.users).values(email="x@example.com", username="BOB", password_hash="h"))
+        insert_user("x@example.com", "BOB")                                      # "bob" is seeded
 
 
 def test_init_db_adds_the_index_to_a_database_that_already_has_its_tables():
     # A database made before this rule (like an existing Supabase one) has the tables but not the index.
-    from sqlalchemy import insert, text
-    from sqlalchemy.exc import IntegrityError
-    import pytest
     with db.engine.begin() as conn:
         conn.execute(text("DROP INDEX users_username_lower_idx"))
-        conn.execute(insert(db.users).values(email="x@example.com", username="BOB", password_hash="h"))  # no longer refused
+    insert_user("x@example.com", "BOB")                                          # no longer refused
+    with db.engine.begin() as conn:
         conn.execute(text("DELETE FROM users WHERE email = 'x@example.com'"))
     db.init_db()                                                                  # the "existing database" path
     db.init_db()                                                                  # and it is safe to run again
     with pytest.raises(IntegrityError):
-        with db.engine.begin() as conn:
-            conn.execute(insert(db.users).values(email="y@example.com", username="BOB", password_hash="h"))
+        insert_user("y@example.com", "BOB")
 
 
 def test_invalid_input_gets_a_clear_400():

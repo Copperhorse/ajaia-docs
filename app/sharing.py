@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from sqlalchemy import delete, insert, select, update
 
 from app import db
-from app.auth import current_user
+from app.auth import current_user, normalize_email
 from app.documents import load_document
 
 router = APIRouter(prefix="/api/documents/{doc_id}/shares")
@@ -26,7 +26,7 @@ def owner_only(conn, doc_id: int, user: dict):
 
 def find_user(conn, email: str):
     user = conn.execute(select(users.c.id, users.c.email, users.c.username)
-                        .where(users.c.email == email.strip().lower())).mappings().first()
+                        .where(users.c.email == normalize_email(email))).mappings().first()
     if user is None:
         raise HTTPException(status_code=404, detail="No user with that email")
     return user

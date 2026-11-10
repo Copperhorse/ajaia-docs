@@ -27,10 +27,12 @@ def clean_title(title: str) -> str:
     return title
 
 
-def load_document(conn, doc_id: int, user: dict):
+def load_document(conn, doc_id: int, user: dict, with_content: bool = False):
     """Return (document row, role). Role is owner, editor or viewer.
-    A missing document and a document the user cannot see give the same 404."""
-    doc = conn.execute(select(docs).where(docs.c.id == doc_id)).mappings().first()
+    A missing document and a document the user cannot see give the same 404.
+    The document text can be large and most callers only need the hash, so it is loaded only on request."""
+    columns = docs.c if with_content else [column for column in docs.c if column.name != "content"]
+    doc = conn.execute(select(*columns).where(docs.c.id == doc_id)).mappings().first()
     if doc is None:
         raise HTTPException(status_code=404, detail="Document not found")
     if doc["owner_id"] == user["id"]:
@@ -119,7 +121,7 @@ def list_documents(user: dict = Depends(current_user)):
 @router.get("/{doc_id}")
 def get_document(doc_id: int, user: dict = Depends(current_user)):
     with db.engine.connect() as conn:
-        doc, role = load_document(conn, doc_id, user)
+        doc, role = load_document(conn, doc_id, user, with_content=True)
         return {
             "id": doc["id"], "title": doc["title"], "content": doc["content"],
             "content_hash": doc["content_hash"], "role": role, "can_edit": role != "viewer",

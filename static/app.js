@@ -6,8 +6,8 @@ const app = document.getElementById("app");
 let me = null;          // the signed-in user, or null
 let currentTab = "owned";
 let leaveEditor = null;   // set by the open editor: stops listeners and saves pending edits
-let leftoverError = null; // a save that failed after the user had already left the page
-let pendingNotice = null; // a note (for example import warnings) to show on the next page
+let nextPageMessage = null; // { kind: "error" | "notice", text }: shown once, on whichever page opens next
+                            // (a save that failed after the user left, import warnings, "Deleted ...")
 
 // ---------- small helpers ----------
 
@@ -52,20 +52,23 @@ async function api(path, { method = "GET", body } = {}) {
 // show() is for errors (coral), info() is for neutral notes (peach).
 function makeMessage() {
   const node = el("div", { hidden: "" });
-  function display(kind, label, text) {
+  const labels = { error: "Error", notice: "Note" };
+  function display(kind, text) {
     node.className = kind;
     node.setAttribute("role", kind === "error" ? "alert" : "status");
-    node.replaceChildren(el("span", { class: "label" }, label), text);
+    node.replaceChildren(el("span", { class: "label" }, labels[kind]), text);
     node.hidden = false;
   }
   const message = {
     node,
-    show(text) { display("error", "Error", text); },
-    info(text) { display("notice", "Note", text); },
+    show(text) { display("error", text); },
+    info(text) { display("notice", text); },
     hide() { node.hidden = true; },
   };
-  if (leftoverError) { message.show(leftoverError); leftoverError = null; }
-  if (pendingNotice) { message.info(pendingNotice); pendingNotice = null; }
+  if (nextPageMessage) {
+    display(nextPageMessage.kind, nextPageMessage.text);
+    nextPageMessage = null;
+  }
   return message;
 }
 
@@ -80,12 +83,6 @@ function mount(...nodes) {
 function formatTime(iso) {
   const hasZone = /(Z|[+-]\d\d:?\d\d)$/.test(iso);
   return new Date(hasZone ? iso : iso + "Z").toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
-}
-
-// For text we write into a downloaded .html file (the page itself never builds HTML from text).
-function escapeHtml(text) {
-  const entities = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" };
-  return text.replace(/[&<>"]/g, (character) => entities[character]);
 }
 
 // A 401 anywhere means the session ended: go back to the sign-in screen.
@@ -109,24 +106,19 @@ function showAuth(mode, notice) {
   const signingUp = mode === "signup";
   const message = makeMessage();
   if (notice) message.show(notice);
-  const field = (id, label, input, hint) =>
-    el("div", { class: "field" }, el("label", { for: id }, label), input, ...(hint ? [el("span", { class: "field-hint" }, hint)] : []));
 
   const email = el("input", { id: "email", type: "email", autocomplete: "username", required: "", placeholder: "alice@example.com" });
   const username = el("input", { id: "username", type: "text", autocomplete: "name", required: "", minlength: "2", maxlength: "30", placeholder: "Alice Smith" });
   const password = el("input", {
-    id: "password", type: "password", required: "",
-    autocomplete: signingUp ? "new-password" : "current-password", ...(signingUp ? { minlength: "8", maxlength: "128" } : {}),
+    id: "password", type: "password", required: "", autocomplete: signingUp ? "new-password" : "current-password",
   });
+  if (signingUp) { password.minLength = 8; password.maxLength = 128; }
   const submit = el("button", { class: "btn btn-primary", type: "submit" }, signingUp ? "Create account" : "Sign in");
 
-  const form = el("form", {},
-    field("email", "Email", email),
-    ...(signingUp ? [field("username", "Display name", username, "2–30 characters. This is the name other people see.")] : []),
-    field("password", "Password", password, signingUp ? "At least 8 characters" : null),
-    message.node,
-    submit,
-  );
+  const rows = [field("email", "Email", email)];
+  if (signingUp) rows.push(field("username", "Display name", username, { hint: "2–30 characters. This is the name other people see." }));
+  rows.push(field("password", "Password", password, { hint: signingUp ? "At least 8 characters" : "" }));
+  const form = el("form", {}, ...rows, message.node, submit);
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
     message.hide();
@@ -171,6 +163,14 @@ function topBar() {
 
 function roleBadge(role) {
   return el("span", { class: "badge badge-" + role }, role);
+}
+
+// One labelled form row: the label, the input, and an optional hint underneath.
+// extraClass is for layout only (the share dialog uses "grow").
+function field(id, label, input, { hint = "", extraClass = "" } = {}) {
+  const row = el("div", { class: `field ${extraClass}`.trim() }, el("label", { for: id }, label), input);
+  if (hint) row.append(el("span", { class: "field-hint" }, hint));
+  return row;
 }
 
 // The viewer/editor dropdown used by the share dialog (extra props: id, aria-label, onchange).
@@ -271,7 +271,7 @@ async function importFile(input, message, button) {
   form.append("file", file);
   try {
     const result = await api("/import", { method: "POST", body: form });
-    if (result.warnings.length) pendingNotice = "Imported with notes: " + result.warnings.join("; ") + ".";
+    if (result.warnings.length) nextPageMessage = { kind: "notice", text: "Imported with notes: " + result.warnings.join("; ") + "." };
     location.hash = "#/doc/" + result.id; // the new document opens in the editor
   } catch (error) {
     handleError(error, message);
@@ -351,7 +351,7 @@ function openEditor(doc, holder, message) {
     titleRow.append(el("span", { class: "badge badge-viewer" }, "View only"));
   }
   card.append(editorBox);
-  const banner = el("div", { class: "banner", role: "alert", hidden: "" }); // filled in when a newer version appears
+  const banner = el("div", { class: "notice banner", role: "alert", hidden: "" }); // filled in when a newer version appears
   holder.replaceChildren(
     titleRow,
     el("div", { class: "meta" }, roleBadge(doc.role), el("span", {}, `Owner: ${doc.owner}`), el("span", {}, who)),
@@ -401,7 +401,7 @@ function deleteControl(docId, getTitle, message) {
     }
     leaveEditor({ discard: true }); // the document is gone: do not try to save into it
     leaveEditor = null;
-    pendingNotice = `Deleted “${title}”.`;
+    nextPageMessage = { kind: "notice", text: `Deleted “${title}”.` };
     location.hash = "#/";
   }
 
@@ -419,7 +419,7 @@ function startAutosave({ doc, quill, titleInput, status, message, banner }) {
   let contentDirty = false;         // content changed since the last save
   let titleDirty = false;
   let saving = false;               // a request is in flight
-  let conflict = null;              // set while the banner is up: someone saved a newer version. Autosave pauses.
+  let conflictHash = null;          // set while the banner is up: the hash of the newer version someone saved. Autosave pauses.
   let active = true;                // false once the user leaves this page
   let discarded = false;            // true if the document was deleted: nothing to save, no errors to report
   let timer = null;
@@ -445,7 +445,7 @@ function startAutosave({ doc, quill, titleInput, status, message, banner }) {
 
   async function save() {
     clearTimeout(timer);
-    if (conflict || saving || !hasUnsavedChanges()) return;
+    if (conflictHash || saving || !hasUnsavedChanges()) return;
 
     const body = {};
     const title = titleInput.value.trim();
@@ -470,7 +470,7 @@ function startAutosave({ doc, quill, titleInput, status, message, banner }) {
       if (sendTitle) titleDirty = true;   // nothing was saved: keep the flags so Ctrl+S can retry
       if (sendContent) contentDirty = true;
       if (!active) {
-        if (!discarded) leftoverError = `Changes to "${titleInput.value}" were not saved. ${error.message}`;
+        if (!discarded) nextPageMessage = { kind: "error", text: `Changes to "${titleInput.value}" were not saved. ${error.message}` };
       } else if (error.status === 409) {
         // Someone saved first. The 409 response carries their version's details.
         const theirs = error.data.current;
@@ -481,14 +481,14 @@ function startAutosave({ doc, quill, titleInput, status, message, banner }) {
       }
     } finally {
       saving = false;
-      if (active && hasUnsavedChanges() && !conflict && status.dataset.state !== "error") scheduleSave();
+      if (active && hasUnsavedChanges() && !conflictHash && status.dataset.state !== "error") scheduleSave();
     }
   }
 
   // ----- someone else saved a newer version: the banner and its three choices -----
 
   function showConflict({ by, at, hash }) {
-    conflict = { hash };
+    conflictHash = hash;
     clearTimeout(timer);
     setStatus("error", "Newer version exists");
     banner.replaceChildren(
@@ -504,7 +504,7 @@ function startAutosave({ doc, quill, titleInput, status, message, banner }) {
   }
 
   function closeConflict() {
-    conflict = null;
+    conflictHash = null;
     banner.hidden = true;
   }
 
@@ -527,7 +527,7 @@ function startAutosave({ doc, quill, titleInput, status, message, banner }) {
 
   // Build on their version's hash and save our text over it.
   function keepMine() {
-    baseHash = conflict.hash;
+    baseHash = conflictHash;
     contentDirty = true;
     closeConflict();
     save();
@@ -535,7 +535,8 @@ function startAutosave({ doc, quill, titleInput, status, message, banner }) {
 
   function downloadMine() {
     const title = titleInput.value.trim() || "document";
-    const page = `<!doctype html>\n<meta charset="utf-8">\n<title>${escapeHtml(title)}</title>\n${toStoredHtml(quill)}\n`;
+    // el() escapes the title text, so a title such as "A & <B>" cannot break the file's HTML.
+    const page = `<!doctype html>\n<meta charset="utf-8">\n${el("title", {}, title).outerHTML}\n${toStoredHtml(quill)}\n`;
     const url = URL.createObjectURL(new Blob([page], { type: "text/html" }));
     el("a", { href: url, download: title + ".html" }).click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
@@ -543,15 +544,21 @@ function startAutosave({ doc, quill, titleInput, status, message, banner }) {
 
   // Every 10 seconds, ask the server whether the saved version still matches the one we started from.
   async function checkForNewerVersion() {
-    if (saving || conflict) return;
+    if (document.hidden || saving || conflictHash) return; // nobody is looking at a background tab
     const hashWhenAsked = baseHash;
     try {
       const meta = await api(`/documents/${doc.id}/meta`);
       // Ignore the answer if one of our own saves finished meanwhile: it describes the version before our save.
-      if (saving || conflict || baseHash !== hashWhenAsked) return;
+      if (saving || conflictHash || baseHash !== hashWhenAsked) return;
       if (meta.content_hash !== baseHash) showConflict({ by: meta.updated_by, at: meta.updated_at, hash: meta.content_hash });
-    } catch {
-      // A missed check is harmless: the next save reports any real problem.
+    } catch (error) {
+      if (error.status === 401 || error.status === 404) {
+        // The session ended, or the document was deleted or unshared: asking again can never work.
+        // Show it here (not on the sign-in screen) so the text being edited stays on the page.
+        clearInterval(poller);
+        message.show(error.message);
+      }
+      // Any other failure is a missed check, which is harmless: the next save reports a real problem.
     }
   }
   const poller = setInterval(checkForNewerVersion, POLL_INTERVAL_MS);
@@ -587,8 +594,8 @@ function startAutosave({ doc, quill, titleInput, status, message, banner }) {
     document.removeEventListener("keydown", onKeydown);
     window.removeEventListener("beforeunload", warnBeforeClosing);
     if (discard) { clearTimeout(timer); return; }
-    if (conflict && hasUnsavedChanges()) {
-      leftoverError = `Changes to "${titleInput.value}" were not saved because someone else saved a newer version.`;
+    if (conflictHash && hasUnsavedChanges()) {
+      nextPageMessage = { kind: "error", text: `Changes to "${titleInput.value}" were not saved because someone else saved a newer version.` };
     }
     save();
   };
@@ -604,8 +611,8 @@ function openShareDialog(docId, title) {
   const done = el("button", { class: "btn", type: "button", onclick: () => dialog.close() }, "Done");
   const people = el("ul", { class: "people" });
   const form = el("form", { class: "share-form" },
-    el("div", { class: "field grow" }, el("label", { for: "share-email" }, "Email"), email),
-    el("div", { class: "field" }, el("label", { for: "share-role" }, "Access"), role),
+    field("share-email", "Email", email, { extraClass: "grow" }),
+    field("share-role", "Access", role),
     addButton,
   );
   const dialog = el("dialog", { class: "dialog glass", "aria-labelledby": "share-title" },

@@ -14,6 +14,7 @@
   --danger: #ff8080;
   --peach-border: rgba(255, 199, 153, .55);
   --peach-tint: rgba(255, 199, 153, .12);
+  --danger-border: rgba(255, 128, 128, .6);
   --radius: 8px;          /* cards, dialogs, banners, the editor */
   --radius-control: 6px;  /* buttons, inputs, dropdowns, tabs, rows */
   --radius-small: 4px;    /* badges, tab chips, toolbar buttons */
@@ -63,7 +64,7 @@ h1:focus { outline: none; }
 
 .error {
   padding: .65rem 1rem; background: var(--surface); color: var(--danger);
-  border: 1px solid rgba(255, 128, 128, .6); border-radius: var(--radius);
+  border: 1px solid var(--danger-border); border-radius: var(--radius);
 }
 .error .label { color: var(--danger); margin-right: .5rem; }
 
@@ -192,17 +193,15 @@ h1:focus { outline: none; }
 .dialog-actions { display: flex; justify-content: flex-end; }
 
 /* ---- change banner: someone else saved a newer version ---- */
-.banner {
-  padding: .85rem 1rem; background: var(--surface); border: 1px solid var(--peach-border); border-radius: var(--radius);
-  display: flex; flex-wrap: wrap; align-items: center; gap: .6rem 1rem;
-}
+.banner { padding: .85rem 1rem; display: flex; flex-wrap: wrap; align-items: center; gap: .6rem 1rem; } /* the look comes from .notice */
+.banner .label { margin-right: 0; }
 .banner-text { flex: 1 1 18rem; overflow-wrap: anywhere; }
 .banner-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
 
 /* ---- delete (inline confirm) ---- */
 .delete-control { display: inline-flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
 .delete-question { color: var(--danger); font-weight: 600; font-size: .9rem; }
-.btn-danger { color: var(--danger); border-color: rgba(255, 128, 128, .6); }
+.btn-danger { color: var(--danger); border-color: var(--danger-border); }
 .btn-danger:hover { background: rgba(255, 128, 128, .12); border-color: var(--danger); }
 
 @media (prefers-reduced-motion: reduce) {

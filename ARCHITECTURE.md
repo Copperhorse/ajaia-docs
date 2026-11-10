@@ -91,6 +91,7 @@ A save without `base_hash` is an intentional overwrite. Renames are separate and
 - A dirty flag marks real edits. Autosave runs one second after the last keystroke, only if something changed. `Ctrl+S` saves immediately.
 - Every 10 seconds the page asks `GET /documents/{id}/meta` for the current hash. If it differs from `base_hash`, a banner shows who saved and when, and **autosave pauses**.
 - A refused save (409) opens the same banner immediately, using the version the 409 carried.
+- The poll skips background tabs. If it gets a 401 or 404 (the session ended, or the document was deleted or unshared) it stops for good and shows the error where the text is being edited, so nothing typed is lost. The `meta` endpoint reads only the hash and timestamps, not the document text.
 - The banner's choices: **Load their version** (replace the editor with the server's text, adopt its hash), **Keep mine and overwrite** (adopt their hash as the base, mark my text dirty, save), **Download my copy** (an `.html` file of my text).
 - A poll answer is ignored if one of the browser's own saves finished while it was in flight, since that answer describes the version from before the save. Without this rule, your own save could raise a false banner.
 - Leaving the page flushes pending edits. If a save then fails, the error is shown on the next page instead of disappearing.

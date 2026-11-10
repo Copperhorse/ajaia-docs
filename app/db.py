@@ -73,12 +73,11 @@ engine = make_engine()
 def init_db():
     """Create tables if missing. On Postgres also turn on Row Level Security (no policies)."""
     metadata.create_all(engine)
-    # Names are unique ignoring case ("Bob" and "bob" are the same name) but shown as typed. This is a separate
-    # statement because create_all skips tables that already exist, and a database made before this rule has none.
-    # (Those older databases also keep their original case-sensitive unique constraint on username. It is harmless.)
-    with engine.begin() as conn:
+    with engine.begin() as conn:  # one transaction, so start-up costs one extra round trip, not two
+        # Names are unique ignoring case ("Bob" and "bob" are the same name) but shown as typed. This is a separate
+        # statement because create_all skips tables that already exist, and a database made before this rule has none.
+        # (Those older databases also keep their original case-sensitive unique constraint on username. It is harmless.)
         conn.exec_driver_sql("CREATE UNIQUE INDEX IF NOT EXISTS users_username_lower_idx ON users (lower(username))")
-    if engine.dialect.name == "postgresql":
-        with engine.begin() as conn:
+        if engine.dialect.name == "postgresql":
             for table in metadata.tables:
                 conn.exec_driver_sql(f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY")
