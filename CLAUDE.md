@@ -42,7 +42,7 @@ The backend (`app/`), the frontend (`static/`, Quill 2.0.3 vendored), `tests/` (
 
 Not done yet: the live deployment smoke test and the demo video. `AI_WORKFLOW.md` is the user's own note and is written.
 
-Deployment: a Docker image (`Dockerfile`) on a Hugging Face Space, pushed from the `space` branch (`main` plus the Space's README header). Secrets are set in the Space settings, never committed. Render's Python runtime is the fallback (build `pip install -r requirements.txt`, start `uvicorn app.main:app --host 0.0.0.0 --port $PORT`).
+Deployment: Vercel, importing the GitHub repo (it finds `app/main.py`, `requirements.txt` and `.python-version` by itself). Environment variables are set in the Vercel project settings, never committed. The `Dockerfile` is for other Docker hosts and is not used on Vercel.
 
 The `uv init` scaffold (`pyproject.toml`, `src/`) was removed as unused. `pytest.ini` holds the pytest settings, and `requirements.txt` pins exact versions.
 

@@ -91,28 +91,25 @@ pytest -q
 
 The in-browser behavior (editor, autosave, banner, dialogs) was checked with a scripted Firefox run during development. That script is **not** part of this repository.
 
-## Deploy (Docker on Hugging Face Spaces, with Supabase)
+## Deploy (Vercel with Supabase)
 
-The database lives in Supabase and the app runs in a container, so any host that runs Docker works. This project uses a Hugging Face Space.
+The database lives in Supabase and the app runs as a Vercel function. Both have free plans that need no credit card (check at sign-up, as providers change their rules).
 
 **1. Supabase.** Create a project and copy the **pooler** connection string (Project settings, Database). Use the pooler URL: the direct connection can be IPv6-only. The app creates its three tables on first start and turns on Row Level Security for them, so there is no SQL to run.
 
-**2. The Space.** Create a Space with SDK **Docker**. A Space's `README.md` must start with a small YAML header (`sdk: docker` and `app_port: 7860`). The `space` branch of this repository is `main` plus that header, so push that branch to the Space:
+**2. Vercel.** Sign in with GitHub, then Add New, Project, and import this repository. Vercel detects FastAPI by itself: it finds `app/main.py`, installs `requirements.txt` and reads the Python version from `.python-version` (3.14). No Dockerfile or build settings are needed.
 
-```bash
-git remote add space https://huggingface.co/spaces/<user>/<space>
-git push space space:main
-```
+**3. Environment variables** (Project settings, before the first deploy): `DATABASE_URL` (the Supabase pooler string), `SECRET_KEY`, `SEED_PASSWORD`, and `COOKIE_SECURE` = `1`. Never put these in the repository.
 
-**3. Settings.** In the Space's settings add the secrets `DATABASE_URL` (the Supabase pooler string), `SECRET_KEY` and `SEED_PASSWORD`, and the variable `COOKIE_SECURE` = `1`. Never put these in the repository.
+**4. Deploy,** then open the `*.vercel.app` address. The first request creates the tables and the demo users, so it is slow.
 
-**4. Open the direct address,** `https://<user>-<space>.hf.space`. The huggingface.co page shows the app inside an iframe, which the app's security headers block, and the sign-in cookie would not be sent from inside it.
+Good to know:
+- Vercel runs the app as a serverless function. Start-up (tables, index, "are there users?") runs again whenever a new instance starts, so the first visit after a quiet period is slower than the rest.
+- **Region matters.** Every request makes several database round trips. Keep the function region close to the Supabase region, or pages take 1.5-2 seconds (see "Performance" in ARCHITECTURE.md). Check the function region in the Vercel project settings.
+- Each open editor asks the server for changes every 10 seconds, and each of those is a function call.
+- Not tested on Vercel before deployment: this was written from Vercel's documentation.
 
-**5. Update later:** `git checkout space && git merge main && git push space space:main`.
-
-The `Dockerfile` installs the pinned libraries, copies only `app/` and `static/`, runs as user 1000 and listens on port 7860 (or `$PORT`). **Region matters:** choose a Supabase region close to where the Space runs. Every request makes several database round trips, and when the two are far apart, pages take 1.5-2 seconds (see "Performance" in ARCHITECTURE.md). A free Space goes to sleep when idle and takes a short while to wake on the next visit; the data lives in Supabase, so nothing is lost.
-
-**Render instead:** a Render web service built from this repository also works. Language Python 3, build command `pip install -r requirements.txt`, start command `uvicorn app.main:app --host 0.0.0.0 --port $PORT`, the same environment variables as above. Render reads the Python version from `.python-version`.
+**Other hosts.** The included `Dockerfile` runs the app anywhere Docker runs: it listens on port 7860 (or `$PORT`) as user 1000, which is what a Hugging Face Space expects. A Docker Space on Hugging Face needs a paid plan, so it was not used. A Render web service also works: build command `pip install -r requirements.txt`, start command `uvicorn app.main:app --host 0.0.0.0 --port $PORT`, the same environment variables.
 
 ## Project layout
 

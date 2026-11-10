@@ -1,8 +1,8 @@
-# Builds the app as a container. Made for Hugging Face Spaces (which expects port 7860 and a non-root user),
-# but it runs anywhere Docker does.
+# Builds the app as a container, for any host that runs Docker (for example a Hugging Face Space, which expects
+# port 7860 and a non-root user). It is not used on Vercel, which runs the app without Docker.
 FROM python:3.14-slim
 
-# Spaces runs containers as user 1000, so use that user instead of root.
+# Hugging Face Spaces runs containers as user 1000, so use that user instead of root.
 RUN useradd --create-home --uid 1000 user
 USER user
 ENV PATH="/home/user/.local/bin:${PATH}"
