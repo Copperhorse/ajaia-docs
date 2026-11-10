@@ -113,7 +113,7 @@ function showAuth(mode, notice) {
     el("div", { class: "field" }, el("label", { for: id }, label), input, ...(hint ? [el("span", { class: "field-hint" }, hint)] : []));
 
   const email = el("input", { id: "email", type: "email", autocomplete: "username", required: "", placeholder: "alice@example.com" });
-  const username = el("input", { id: "username", type: "text", autocomplete: "nickname", required: "", minlength: "2", maxlength: "30", placeholder: "alice" });
+  const username = el("input", { id: "username", type: "text", autocomplete: "name", required: "", minlength: "2", maxlength: "30", placeholder: "Alice Smith" });
   const password = el("input", {
     id: "password", type: "password", required: "",
     autocomplete: signingUp ? "new-password" : "current-password", ...(signingUp ? { minlength: "8", maxlength: "128" } : {}),
@@ -122,7 +122,7 @@ function showAuth(mode, notice) {
 
   const form = el("form", {},
     field("email", "Email", email),
-    ...(signingUp ? [field("username", "Username", username, "2–30 letters, numbers, dots, dashes or underscores")] : []),
+    ...(signingUp ? [field("username", "Display name", username, "2–30 characters. This is the name other people see.")] : []),
     field("password", "Password", password, signingUp ? "At least 8 characters" : null),
     message.node,
     submit,

@@ -10,7 +10,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-from sqlalchemy import insert, select
+from sqlalchemy import func, insert, select
 from sqlalchemy.exc import IntegrityError
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -94,7 +94,8 @@ def login(body: LoginBody, request: Request):
 
 
 EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
-USERNAME_PATTERN = re.compile(r"^[a-z0-9._-]{2,30}$")
+# A display name: letters (any language), digits, spaces, and . _ - ' with at least one letter or digit.
+NAME_PATTERN = re.compile(r"^(?=.*\w)[\w .'’-]{2,30}$")
 
 
 class RegisterBody(BaseModel):
@@ -107,11 +108,11 @@ class RegisterBody(BaseModel):
 def register(body: RegisterBody, request: Request):
     """Open sign-up: anyone can create an account. No email verification (see SPEC section 16)."""
     email = body.email.strip().lower()
-    username = body.username.strip().lower()
+    username = " ".join(body.username.split())  # trim and collapse runs of spaces; capitals are kept
     if len(email) > 254 or not EMAIL_PATTERN.match(email):
         raise HTTPException(status_code=400, detail="Please enter a valid email address")
-    if not USERNAME_PATTERN.match(username):
-        raise HTTPException(status_code=400, detail="Username must be 2 to 30 characters: letters, numbers, dots, dashes or underscores")
+    if not NAME_PATTERN.match(username):
+        raise HTTPException(status_code=400, detail="Name must be 2 to 30 characters: letters, numbers, spaces, dots, dashes, apostrophes or underscores")
     if not 8 <= len(body.password) <= 128:
         raise HTTPException(status_code=400, detail="Password must be 8 to 128 characters")
 
@@ -120,13 +121,14 @@ def register(body: RegisterBody, request: Request):
         with db.engine.begin() as conn:
             if conn.execute(select(db.users.c.id).where(db.users.c.email == email)).first():
                 raise HTTPException(status_code=409, detail="An account with that email already exists")
-            if conn.execute(select(db.users.c.id).where(db.users.c.username == username)).first():
-                raise HTTPException(status_code=409, detail="That username is taken")
+            # compared ignoring case, the same way the unique index does it
+            if conn.execute(select(db.users.c.id).where(func.lower(db.users.c.username) == func.lower(username))).first():
+                raise HTTPException(status_code=409, detail="That name is taken")
             user_id = conn.execute(insert(db.users).values(
                 email=email, username=username, password_hash=password_hash,
             )).inserted_primary_key[0]
-    except IntegrityError:  # two sign-ups with the same email or username at the same instant
-        raise HTTPException(status_code=409, detail="That email or username is already taken")
+    except IntegrityError:  # two sign-ups with the same email or name at the same instant
+        raise HTTPException(status_code=409, detail="That email or name is already taken")
 
     request.session.clear()
     request.session["user_id"] = user_id  # signed in straight away

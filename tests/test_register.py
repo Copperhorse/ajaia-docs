@@ -30,27 +30,72 @@ def test_new_user_can_sign_in_again_and_password_is_stored_hashed():
     assert stored.startswith("scrypt$") and "a-good-password" not in stored
 
 
-def test_email_and_username_are_cleaned_up():
-    r = sign_up(TestClient(app), email="  Mixed.Case@Example.COM ", username="  Mixed_Name ")
+def test_email_is_cleaned_up_and_name_keeps_its_capitals_and_spaces():
+    r = sign_up(TestClient(app), email="  Mixed.Case@Example.COM ", username="  Bob    Odenkirk ")
     assert r.status_code == 201
-    assert r.json()["email"] == "mixed.case@example.com" and r.json()["username"] == "mixed_name"
+    assert r.json()["email"] == "mixed.case@example.com"   # emails are lowercased
+    assert r.json()["username"] == "Bob Odenkirk"           # names are shown as typed, with spaces tidied
 
 
-def test_duplicate_email_and_username_are_refused(login_as):
+def test_names_with_spaces_capitals_accents_and_apostrophes_are_accepted():
     client = TestClient(app)
-    r = sign_up(client, email="ALICE@example.com", username="someone-else")      # alice is seeded
+    for i, name in enumerate(["Bob Odenkirk", "José Müller", "O'Brien", "a_b-c.d", "李雷", "Ab"]):
+        r = sign_up(client, email=f"person{i}@example.com", username=name)
+        assert r.status_code == 201 and r.json()["username"] == name, name
+        assert client.get("/api/me").json()["username"] == name
+
+
+def test_the_name_people_see_is_the_one_that_was_typed(login_as):
+    sign_up(TestClient(app), email="sue@example.com", username="Sue Smith")
+    alice = login_as("alice")
+    alice.put(f"/api/documents/{WELCOME}/shares", json={"email": "sue@example.com", "role": "viewer"})
+    names = {p["email"]: p["username"] for p in alice.get(f"/api/documents/{WELCOME}/shares").json()}
+    assert names["sue@example.com"] == "Sue Smith"
+
+
+def test_duplicate_email_and_name_are_refused(login_as):
+    client = TestClient(app)
+    r = sign_up(client, email="ALICE@example.com", username="someone else")      # alice is seeded
     assert r.status_code == 409 and r.json() == {"detail": "An account with that email already exists"}
-    r = sign_up(client, email="fresh@example.com", username="Alice")
-    assert r.status_code == 409 and r.json() == {"detail": "That username is taken"}
+    for i, taken in enumerate(["alice", "Alice", "ALICE", "  aLiCe  "]):          # names clash ignoring case
+        r = sign_up(client, email=f"fresh{i}@example.com", username=taken)
+        assert r.status_code == 409 and r.json() == {"detail": "That name is taken"}, taken
     assert client.get("/api/me").status_code == 401                              # a refused sign-up does not sign anyone in
+
+
+def test_the_database_itself_refuses_names_that_differ_only_by_case():
+    from sqlalchemy import insert
+    from sqlalchemy.exc import IntegrityError
+    import pytest
+    with pytest.raises(IntegrityError):
+        with db.engine.begin() as conn:                                          # "bob" is seeded
+            conn.execute(insert(db.users).values(email="x@example.com", username="BOB", password_hash="h"))
+
+
+def test_init_db_adds_the_index_to_a_database_that_already_has_its_tables():
+    # A database made before this rule (like an existing Supabase one) has the tables but not the index.
+    from sqlalchemy import insert, text
+    from sqlalchemy.exc import IntegrityError
+    import pytest
+    with db.engine.begin() as conn:
+        conn.execute(text("DROP INDEX users_username_lower_idx"))
+        conn.execute(insert(db.users).values(email="x@example.com", username="BOB", password_hash="h"))  # no longer refused
+        conn.execute(text("DELETE FROM users WHERE email = 'x@example.com'"))
+    db.init_db()                                                                  # the "existing database" path
+    db.init_db()                                                                  # and it is safe to run again
+    with pytest.raises(IntegrityError):
+        with db.engine.begin() as conn:
+            conn.execute(insert(db.users).values(email="y@example.com", username="BOB", password_hash="h"))
 
 
 def test_invalid_input_gets_a_clear_400():
     client = TestClient(app)
     for email in ("", "not-an-email", "a@b", "two words@example.com", "x" * 250 + "@example.com"):
         assert sign_up(client, email=email).status_code == 400, email
-    for username in ("", "a", "x" * 31, "has space", "semi;colon", "<script>"):
-        assert sign_up(client, username=username).status_code == 400, username
+    for name in ("", " ", "a", "x" * 31, "semi;colon", "<script>", "a@b.c", "!!", "..", "a/b", "tab\x00nul"):
+        assert sign_up(client, username=name).status_code == 400, name
+    assert sign_up(client, username="x" * 31).json() == {
+        "detail": "Name must be 2 to 30 characters: letters, numbers, spaces, dots, dashes, apostrophes or underscores"}
     for password in ("", "short", "x" * 129):
         assert sign_up(client, password=password).status_code == 400, password
     r = sign_up(client, password="short")

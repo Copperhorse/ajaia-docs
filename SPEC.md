@@ -23,7 +23,7 @@ Mapping to the assignment:
 
 **In:**
 - Email + password login with seeded demo users.
-- Open sign-up (email, username, password): anyone can create an account and is signed in at once. No email verification, no password reset.
+- Open sign-up (email, display name, password): anyone can create an account and is signed in at once. No email verification, no password reset. The display name may contain spaces and capitals and is shown as typed.
 - Document list with two tabs: "Owned by me" and "Shared with me" (role badge, owner name).
 - Rich-text editor: bold, italic, underline, headings (H1-H3), bullet and numbered lists.
 - Rename document, autosave, manual save.
@@ -58,7 +58,7 @@ PyMuPDF was considered and rejected: Office-to-Markdown needs the paid PyMuPDF P
 create table users (
   id bigint generated always as identity primary key,
   email text unique not null,
-  username text unique not null,
+  username text not null,            -- the display name, shown as typed
   password_hash text not null,
   created_at timestamptz default now()
 );
@@ -81,12 +81,15 @@ create table shares (
   primary key (document_id, user_id)
 );
 
+-- names are unique ignoring case ("Bob" and "bob" are the same name)
+create unique index users_username_lower_idx on users (lower(username));
+
 alter table users enable row level security;
 alter table documents enable row level security;
 alter table shares enable row level security;
 ```
 
-Rules: exactly one owner per document (`owner_id`). `shares` lists only people the document was shared with. Emails are stored and compared in lowercase.
+Rules: exactly one owner per document (`owner_id`). `shares` lists only people the document was shared with. Emails are stored and compared in lowercase. Display names are stored as typed and compared ignoring case. The app creates the index itself at start-up (`CREATE UNIQUE INDEX IF NOT EXISTS`), so a database made before the rule gets it too.
 
 ## 5. Permissions
 
@@ -105,7 +108,7 @@ All JSON under `/api`. Errors always return `{"detail": "human readable message"
 
 | Method + path | Purpose |
 |---|---|
-| `POST /api/register` `{email, username, password}` | Create an account and start a session (201). 400 for invalid input, 409 if the email or username is taken. |
+| `POST /api/register` `{email, username, password}` | Create an account and start a session (201). 400 for invalid input, 409 if the email or name is taken. |
 | `POST /api/login` `{email, password}` | Start session. 401 on bad credentials. |
 | `POST /api/logout`, `GET /api/me` | End session, current user. |
 | `GET /api/documents` | `{owned: [...], shared: [...]}` with title, preview, updated_at, role, owner name, share count. |
@@ -164,7 +167,7 @@ Also set `Content-Security-Policy`, `X-Content-Type-Options: nosniff`, and sessi
 - Title: trimmed, 1-200 characters.
 - Content: sanitized, at most 500,000 characters.
 - Share role: `viewer` or `editor` only.
-- Sign-up: email trimmed and lowercased, a simple `x@y.z` shape check, at most 254 characters. Username trimmed and lowercased, 2-30 characters from `a-z 0-9 . _ -`. Password 8-128 characters (not trimmed).
+- Sign-up: email trimmed and lowercased, a simple `x@y.z` shape check, at most 254 characters. Display name (sent as `username`): runs of spaces collapsed, 2-30 characters, letters of any language, digits, spaces and `. _ - '`, at least one letter or digit, capitals kept. Password 8-128 characters (not trimmed).
 - Login failures say "Wrong email or password" and nothing more.
 - The UI shows every API error message in a visible message area. No silent failures. Network errors show "Could not reach the server".
 - Viewers see a read-only editor (toolbar hidden or disabled) and a "View only" badge.
