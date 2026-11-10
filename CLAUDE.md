@@ -36,16 +36,15 @@ If `DATABASE_URL` is unset, fall back to a local SQLite file for development.
 - Passwords: scrypt from the standard library. Never log or return password hashes.
 - Do not commit secrets or `.env`. Do not put real credentials in docs.
 
-## Status of existing files
+## Status
 
-`app/` contains an **earlier draft** written before the design changed. It used SQLite, Quill Delta JSON and a `version` counter. Treat it as superseded:
-- `app/delta.py`: superseded by the HTML sanitizer. Do not extend it.
-- `app/db.py`: superseded by the SQLAlchemy layer.
-- `app/main.py`: reuse the route structure and permission helper idea, but rewrite save logic per SPEC section 7.
-- `app/security.py` (scrypt hashing), `app/importers.py` (txt/md/docx to HTML) and `app/seed.py`: mostly reusable. Seed users must change to emails.
-- `static/vendor/quill.js` and `quill.snow.css` are Quill 2.0.3 and are kept.
+The backend (`app/`), the frontend (`static/`, Quill 2.0.3 vendored), `tests/` (72 pytest tests), `README.md`, `ARCHITECTURE.md` and a draft `SUBMISSION.md` are written. See ARCHITECTURE.md for how the pieces fit.
 
-Not yet written: new DB layer, sanitizer, frontend (`static/`), tests, requirements.txt, Dockerfile, README, ARCHITECTURE, SUBMISSION.
+Not done yet: deployment on Render and its smoke test, `AI_WORKFLOW.md` (the user writes it in their own words), the demo video.
+
+Deployment: Render builds from the GitHub repo (no Docker, no Dockerfile). Build `pip install -r requirements.txt`, start `uvicorn app.main:app --host 0.0.0.0 --port $PORT`.
+
+Leftover from the `uv init` scaffold: `pyproject.toml` and `src/text_editor/` are unused by the app.
 
 ## Definition of done for a milestone
 

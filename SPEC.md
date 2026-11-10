@@ -48,7 +48,7 @@ Mapping to the assignment:
 - **Import:** `mammoth` (.docx to HTML), `markdown` (.md to HTML), plain `.txt` is escaped into paragraphs.
 - **Frontend:** plain HTML + JS + CSS served by FastAPI. No framework.
 - **Tests:** pytest with FastAPI `TestClient`. Optional Playwright smoke test.
-- **Deploy:** Docker on Render (or Hugging Face Spaces). Free tiers wipe local files, which is why data lives in Supabase.
+- **Deploy:** a Render web service built straight from the GitHub repository (native Python runtime, no Docker, no Dockerfile). Free tiers wipe local files, which is why data lives in Supabase.
 
 PyMuPDF was considered and rejected: Office-to-Markdown needs the paid PyMuPDF Pro add-on (3-page limit without a license), and the direction is wrong for this task.
 
@@ -188,16 +188,16 @@ Seeded demo users (password from `SEED_PASSWORD`, document it in the README):
 - `alice@example.com`, `bob@example.com`, `carol@example.com`
 - Welcome document owned by Alice, shared with Bob (editor) and Carol (viewer). A second document owned by Bob, shared with Alice (editor).
 
-Dockerfile listens on `$PORT` (default 7860).
+Render settings: build command `pip install -r requirements.txt`; start command `uvicorn app.main:app --host 0.0.0.0 --port $PORT`. Render reads the Python version from `.python-version`. Pick the Render region nearest the Supabase region (see ARCHITECTURE.md, "Performance").
 
 ## 13. Deliverables checklist
 
 Google Drive folder (shared "anyone with the link") containing:
-- [ ] Source code
-- [ ] `README.md` (what it does, supported file types, run locally, run tests, demo logins, known limits)
-- [ ] Architecture note (can be `ARCHITECTURE.md`)
+- [x] Source code (https://github.com/Copperhorse/ajaia-docs)
+- [x] `README.md` (what it does, supported file types, run locally, run tests, demo logins, known limits)
+- [x] Architecture note (`ARCHITECTURE.md`)
 - [ ] AI workflow note (`AI_WORKFLOW.md`, written by the user in their own words, see that file)
-- [ ] `SUBMISSION.md` (what works, what is partial, what I'd build next)
+- [ ] `SUBMISSION.md` (what works, what is partial, what I'd build next). Drafted; the live URL, demo password and video link still need filling in.
 - [ ] Live URL and test credentials
 - [ ] A text file containing the video URL
 
@@ -214,17 +214,18 @@ Walkthrough order: log in as Alice, create and format a document, import a file,
 | 13:15 | Tests for permissions and save semantics |
 | 13:45 | Frontend: login, list with tabs, editor, autosave, share dialog |
 | 14:30 | Import, change banner |
-| 14:50 | Dockerfile, deploy, smoke test on the live URL |
+| 14:50 | Deploy on Render from the GitHub repo, smoke test on the live URL |
 | 15:05 | README, ARCHITECTURE, SUBMISSION, AI_WORKFLOW, Drive folder |
 | 15:15 | Record and upload video, submit |
 
 If behind schedule, cut in this order: diff highlighting, "Download my copy", Playwright test, polish. Never cut: persistence, sharing, permissions checks, one automated test, the live URL, the video.
 
-## 15. Open decisions
+## 15. Decisions (all settled)
 
-- **OPEN:** share by email (default in this spec) or by username?
-- **OPEN:** host: Render (default) or Hugging Face Spaces.
-- **OPEN:** user confirms Supabase Postgres (assumed) over SQLite.
+- Sharing is by **email**.
+- Host: **Render**, built from the GitHub repository.
+- Database: **Supabase Postgres** (SQLite only for tests and local development).
+- Account creation: **open sign-up** (added after the first version of this spec).
 
 ## 16. Known limitations (copy into README)
 
