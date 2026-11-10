@@ -196,6 +196,12 @@ h1:focus { outline: none; }
 .banner-text { flex: 1 1 18rem; overflow-wrap: anywhere; }
 .banner-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
 
+/* ---- delete (inline confirm) ---- */
+.delete-control { display: inline-flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+.delete-question { color: var(--danger); font-weight: 600; font-size: .9rem; }
+.btn-danger { color: var(--danger); border-color: rgba(255, 128, 128, .6); }
+.btn-danger:hover { background: rgba(255, 128, 128, .12); border-color: var(--danger); }
+
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
 }

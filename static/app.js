@@ -337,11 +337,13 @@ function openEditor(doc, holder, message) {
   const card = el("div", { class: "editor-card glass" });
   if (canEdit) {
     titleRow.append(status);
-    // Only the owner can share. The server enforces this too; hiding the button is just tidiness.
+    // Only the owner can share or delete. The server enforces this too; hiding the buttons is just tidiness.
     if (doc.role === "owner") {
-      titleRow.append(el("button", {
-        class: "btn", type: "button", onclick: () => openShareDialog(doc.id, titleInput.value.trim() || doc.title),
-      }, "Share"));
+      const currentTitle = () => titleInput.value.trim() || doc.title;
+      titleRow.append(
+        el("button", { class: "btn", type: "button", onclick: () => openShareDialog(doc.id, currentTitle()) }, "Share"),
+        deleteControl(doc.id, currentTitle, message),
+      );
     }
     card.append(toolbar);
   } else {
@@ -371,6 +373,45 @@ function openEditor(doc, holder, message) {
   quill.focus();
 }
 
+// The owner's Delete button. It asks first, and Cancel gets the focus so a stray Enter cannot delete.
+function deleteControl(docId, getTitle, message) {
+  const box = el("span", { class: "delete-control" });
+
+  function showDeleteButton(focus) {
+    const button = el("button", { class: "btn", type: "button", onclick: askToConfirm }, "Delete");
+    box.replaceChildren(button);
+    if (focus) button.focus();
+  }
+
+  function askToConfirm() {
+    const cancel = el("button", { class: "btn", type: "button", onclick: () => showDeleteButton(true) }, "Cancel");
+    const confirm = el("button", { class: "btn btn-danger", type: "button", onclick: () => remove(confirm) }, "Yes, delete");
+    box.replaceChildren(el("span", { class: "delete-question", role: "alert" }, "Delete this document?"), confirm, cancel);
+    cancel.focus();
+  }
+
+  async function remove(confirmButton) {
+    confirmButton.disabled = true;
+    const title = getTitle();
+    try {
+      await api("/documents/" + docId, { method: "DELETE" });
+    } catch (error) {
+      showDeleteButton(true);
+      return handleError(error, message);
+    }
+    leaveEditor({ discard: true }); // the document is gone: do not try to save into it
+    leaveEditor = null;
+    pendingNotice = `Deleted “${title}”.`;
+    location.hash = "#/";
+  }
+
+  box.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && box.querySelector(".btn-danger")) showDeleteButton(true);
+  });
+  showDeleteButton(false);
+  return box;
+}
+
 // Saving for an editable document: autosave, Ctrl+S, and change detection (SPEC section 7).
 // Returns the function that route() calls when the user leaves the page.
 function startAutosave({ doc, quill, titleInput, status, message, banner }) {
@@ -380,6 +421,7 @@ function startAutosave({ doc, quill, titleInput, status, message, banner }) {
   let saving = false;               // a request is in flight
   let conflict = null;              // set while the banner is up: someone saved a newer version. Autosave pauses.
   let active = true;                // false once the user leaves this page
+  let discarded = false;            // true if the document was deleted: nothing to save, no errors to report
   let timer = null;
 
   function hasUnsavedChanges() { return contentDirty || titleDirty; }
@@ -428,7 +470,7 @@ function startAutosave({ doc, quill, titleInput, status, message, banner }) {
       if (sendTitle) titleDirty = true;   // nothing was saved: keep the flags so Ctrl+S can retry
       if (sendContent) contentDirty = true;
       if (!active) {
-        leftoverError = `Changes to "${titleInput.value}" were not saved. ${error.message}`;
+        if (!discarded) leftoverError = `Changes to "${titleInput.value}" were not saved. ${error.message}`;
       } else if (error.status === 409) {
         // Someone saved first. The 409 response carries their version's details.
         const theirs = error.data.current;
@@ -537,11 +579,14 @@ function startAutosave({ doc, quill, titleInput, status, message, banner }) {
   window.addEventListener("beforeunload", warnBeforeClosing);
 
   // route() calls this when the user leaves the page: stop listening and save whatever is pending.
-  return function leave() {
+  // With { discard: true } (the document was just deleted) nothing is saved.
+  return function leave({ discard = false } = {}) {
     active = false;
+    discarded = discard;
     clearInterval(poller);
     document.removeEventListener("keydown", onKeydown);
     window.removeEventListener("beforeunload", warnBeforeClosing);
+    if (discard) { clearTimeout(timer); return; }
     if (conflict && hasUnsavedChanges()) {
       leftoverError = `Changes to "${titleInput.value}" were not saved because someone else saved a newer version.`;
     }
