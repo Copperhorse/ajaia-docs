@@ -2,10 +2,12 @@ import logging
 import os
 import secrets
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sqlalchemy import select
 from starlette.middleware.sessions import SessionMiddleware
@@ -103,3 +105,12 @@ def me(user: dict = Depends(current_user)):
 @app.get("/healthz")
 def healthz():
     return {"status": "ok"}
+
+
+STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+
+@app.get("/")
+def home():
+    return FileResponse(STATIC_DIR / "index.html")
