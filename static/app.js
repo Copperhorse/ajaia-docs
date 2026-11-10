@@ -82,6 +82,12 @@ function formatTime(iso) {
   return new Date(hasZone ? iso : iso + "Z").toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
 }
 
+// For text we write into a downloaded .html file (the page itself never builds HTML from text).
+function escapeHtml(text) {
+  const entities = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" };
+  return text.replace(/[&<>"]/g, (character) => entities[character]);
+}
+
 // A 401 anywhere means the session ended: go back to the sign-in screen.
 function handleError(error, message) {
   if (error.status === 401) {
@@ -260,6 +266,7 @@ async function importFile(input, message, button) {
 // ---------- document page: the editor ----------
 
 const AUTOSAVE_DELAY_MS = 1000;
+const POLL_INTERVAL_MS = 10000;
 const FORMATS = ["header", "bold", "italic", "underline", "list", "link"]; // link: kept for imported files, no toolbar button
 
 // Quill writes every space as &nbsp;, which never wraps. Turn lone ones back into normal spaces.
@@ -323,9 +330,11 @@ function openEditor(doc, holder, message) {
     titleRow.append(el("span", { class: "badge badge-viewer" }, "View only"));
   }
   card.append(editorBox);
+  const banner = el("div", { class: "banner", role: "alert", hidden: "" }); // filled in when a newer version appears
   holder.replaceChildren(
     titleRow,
     el("div", { class: "meta" }, roleBadge(doc.role), el("span", {}, `Owner: ${doc.owner}`), el("span", {}, who)),
+    banner,
     card,
   );
 
@@ -339,18 +348,18 @@ function openEditor(doc, holder, message) {
   // Load the saved HTML. "silent" means this does not count as an edit.
   quill.setContents(quill.clipboard.convert({ html: doc.content }), "silent");
   if (!canEdit) return;
-  leaveEditor = startAutosave({ doc, quill, titleInput, status, message });
+  leaveEditor = startAutosave({ doc, quill, titleInput, status, message, banner });
   quill.focus();
 }
 
 // Saving for an editable document: autosave, Ctrl+S, and change detection (SPEC section 7).
 // Returns the function that route() calls when the user leaves the page.
-function startAutosave({ doc, quill, titleInput, status, message }) {
+function startAutosave({ doc, quill, titleInput, status, message, banner }) {
   let baseHash = doc.content_hash;  // hash of the version we loaded or last saved (SPEC section 7)
   let contentDirty = false;         // content changed since the last save
   let titleDirty = false;
   let saving = false;               // a request is in flight
-  let stopped = false;              // true after a conflict: autosave pauses (the change banner comes next milestone)
+  let conflict = null;              // set while the banner is up: someone saved a newer version. Autosave pauses.
   let active = true;                // false once the user leaves this page
   let timer = null;
 
@@ -375,7 +384,7 @@ function startAutosave({ doc, quill, titleInput, status, message }) {
 
   async function save() {
     clearTimeout(timer);
-    if (stopped || saving || !hasUnsavedChanges()) return;
+    if (conflict || saving || !hasUnsavedChanges()) return;
 
     const body = {};
     const title = titleInput.value.trim();
@@ -399,17 +408,92 @@ function startAutosave({ doc, quill, titleInput, status, message }) {
     } catch (error) {
       if (sendTitle) titleDirty = true;   // nothing was saved: keep the flags so Ctrl+S can retry
       if (sendContent) contentDirty = true;
-      if (error.status === 409) stopped = true;
-      const text = error.status === 409
-        ? "Someone else saved a newer version, so your latest edits were not saved. Copy what you need, then reload the page."
-        : `Could not save: ${error.message}. Your changes are still on this page. Press Ctrl+S to try again.`;
-      if (active) { setStatus("error", "Not saved"); message.show(text); }
-      else leftoverError = `Changes to "${titleInput.value}" were not saved. ${error.message}`;
+      if (!active) {
+        leftoverError = `Changes to "${titleInput.value}" were not saved. ${error.message}`;
+      } else if (error.status === 409) {
+        // Someone saved first. The 409 response carries their version's details.
+        const theirs = error.data.current;
+        showConflict({ by: theirs.updated_by, at: theirs.updated_at, hash: theirs.content_hash });
+      } else {
+        setStatus("error", "Not saved");
+        message.show(`Could not save: ${error.message}. Your changes are still on this page. Press Ctrl+S to try again.`);
+      }
     } finally {
       saving = false;
-      if (active && hasUnsavedChanges() && !stopped && status.dataset.state !== "error") scheduleSave();
+      if (active && hasUnsavedChanges() && !conflict && status.dataset.state !== "error") scheduleSave();
     }
   }
+
+  // ----- someone else saved a newer version: the banner and its three choices -----
+
+  function showConflict({ by, at, hash }) {
+    conflict = { hash };
+    clearTimeout(timer);
+    setStatus("error", "Newer version exists");
+    banner.replaceChildren(
+      el("span", { class: "label" }, "Newer version"),
+      el("span", { class: "banner-text" },
+        `${by || "Someone"} edited this document at ${formatTime(at)}. Autosave is paused until you choose.`),
+      el("div", { class: "banner-actions" },
+        el("button", { class: "btn btn-primary", type: "button", onclick: loadTheirVersion }, "Load their version"),
+        el("button", { class: "btn", type: "button", onclick: keepMine }, "Keep mine and overwrite"),
+        el("button", { class: "btn", type: "button", onclick: downloadMine }, "Download my copy")),
+    );
+    banner.hidden = false;
+  }
+
+  function closeConflict() {
+    conflict = null;
+    banner.hidden = true;
+  }
+
+  // Replace the editor with what is saved on the server. Edits made here since the last save are discarded.
+  async function loadTheirVersion() {
+    try {
+      const latest = await api("/documents/" + doc.id);
+      quill.setContents(quill.clipboard.convert({ html: latest.content }), "silent");
+      quill.history.clear(); // Undo must not jump back into the old text
+      baseHash = latest.content_hash;
+      contentDirty = false;
+      closeConflict();
+      message.hide();
+      if (titleDirty) edited();
+      else setStatus("saved", "Loaded their version");
+    } catch (error) {
+      message.show(error.message);
+    }
+  }
+
+  // Build on their version's hash and save our text over it.
+  function keepMine() {
+    baseHash = conflict.hash;
+    contentDirty = true;
+    closeConflict();
+    save();
+  }
+
+  function downloadMine() {
+    const title = titleInput.value.trim() || "document";
+    const page = `<!doctype html>\n<meta charset="utf-8">\n<title>${escapeHtml(title)}</title>\n${toStoredHtml(quill)}\n`;
+    const url = URL.createObjectURL(new Blob([page], { type: "text/html" }));
+    el("a", { href: url, download: title + ".html" }).click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  // Every 10 seconds, ask the server whether the saved version still matches the one we started from.
+  async function checkForNewerVersion() {
+    if (saving || conflict) return;
+    const hashWhenAsked = baseHash;
+    try {
+      const meta = await api(`/documents/${doc.id}/meta`);
+      // Ignore the answer if one of our own saves finished meanwhile: it describes the version before our save.
+      if (saving || conflict || baseHash !== hashWhenAsked) return;
+      if (meta.content_hash !== baseHash) showConflict({ by: meta.updated_by, at: meta.updated_at, hash: meta.content_hash });
+    } catch {
+      // A missed check is harmless: the next save reports any real problem.
+    }
+  }
+  const poller = setInterval(checkForNewerVersion, POLL_INTERVAL_MS);
 
   quill.on("text-change", (_delta, _old, source) => {
     if (source !== "user") return;
@@ -436,8 +520,12 @@ function startAutosave({ doc, quill, titleInput, status, message }) {
   // route() calls this when the user leaves the page: stop listening and save whatever is pending.
   return function leave() {
     active = false;
+    clearInterval(poller);
     document.removeEventListener("keydown", onKeydown);
     window.removeEventListener("beforeunload", warnBeforeClosing);
+    if (conflict && hasUnsavedChanges()) {
+      leftoverError = `Changes to "${titleInput.value}" were not saved because someone else saved a newer version.`;
+    }
     save();
   };
 }

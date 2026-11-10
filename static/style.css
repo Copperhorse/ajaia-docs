@@ -182,6 +182,14 @@ h1:focus { outline: none; }
 .person-info { display: flex; flex-direction: column; flex: 1 1 10rem; min-width: 0; overflow-wrap: anywhere; font-size: .9rem; }
 .dialog-actions { display: flex; justify-content: flex-end; }
 
+/* ---- change banner: someone else saved a newer version ---- */
+.banner {
+  padding: .85rem 1rem; background: var(--surface); border: 1px solid var(--peach-border); border-radius: var(--radius);
+  display: flex; flex-wrap: wrap; align-items: center; gap: .6rem 1rem;
+}
+.banner-text { flex: 1 1 18rem; overflow-wrap: anywhere; }
+.banner-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
 }
